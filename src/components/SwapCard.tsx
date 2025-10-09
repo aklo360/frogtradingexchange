@@ -420,8 +420,6 @@ export const SwapCard = () => {
       <header className={styles.header}>
         <div>
           <span className={styles.badge}>Swap</span>
-          <h1>Frog Trading Exchange</h1>
-          <p className={styles.tagline}>Powered by Titan for the best prices on Solana.</p>
         </div>
         <div className={styles.swapMeta}>
           <span className={`${styles.statusPill} ${statusBadge.tone}`}>

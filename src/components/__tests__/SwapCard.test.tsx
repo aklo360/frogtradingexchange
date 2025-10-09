@@ -91,9 +91,6 @@ describe("SwapCard", () => {
   it("renders the swap layout with quote data once wallet is connected", async () => {
     render(<SwapCard />);
 
-    expect(
-      screen.getByRole("heading", { name: /frog trading exchange/i }),
-    ).toBeInTheDocument();
     expect(screen.getByText(/you pay/i)).toBeInTheDocument();
     expect(screen.getByText(/you receive/i)).toBeInTheDocument();
 

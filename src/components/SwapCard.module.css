@@ -36,21 +36,6 @@
   text-transform: uppercase;
 }
 
-.header h1 {
-  margin-top: 0.75rem;
-  font-size: 1.4rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #14f195;
-}
-
-.tagline {
-  margin-top: 0.7rem;
-  font-size: 0.68rem;
-  line-height: 1.65;
-  color: rgba(234, 253, 244, 0.85);
-}
-
 .swapMeta {
   display: flex;
   flex-direction: column;
