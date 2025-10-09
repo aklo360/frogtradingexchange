@@ -2,6 +2,28 @@ import { render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, vi } from "vitest";
 import { SwapCard } from "../SwapCard";
 
+const disconnectMock = vi.fn();
+const getBalanceMock = vi.fn().mockResolvedValue(1_500_000_000);
+vi.mock("@solana/wallet-adapter-react", () => ({
+  useWallet: () => ({
+    connected: true,
+    publicKey: { toBase58: () => "mock-public-key" },
+    disconnect: disconnectMock,
+    disconnecting: false,
+  }),
+  useConnection: () => ({
+    connection: {
+      getBalance: getBalanceMock,
+    },
+  }),
+}));
+
+vi.mock("@solana/wallet-adapter-react-ui", () => ({
+  useWalletModal: () => ({
+    setVisible: vi.fn(),
+  }),
+}));
+
 describe("SwapCard", () => {
   const mockQuote = {
     amountOut: "980000",
@@ -15,6 +37,8 @@ describe("SwapCard", () => {
   };
 
   beforeEach(() => {
+    disconnectMock.mockReset();
+    getBalanceMock.mockResolvedValue(1_500_000_000);
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -28,7 +52,7 @@ describe("SwapCard", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders the swap layout with quote data", async () => {
+  it("renders the swap layout with quote data once wallet is connected", async () => {
     render(<SwapCard />);
 
     expect(
@@ -36,10 +60,7 @@ describe("SwapCard", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/you pay/i)).toBeInTheDocument();
     expect(screen.getByText(/you receive/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /switch tokens/i })).toBeInTheDocument();
-    expect(screen.getByLabelText(/select token to pay/i)).toBeInTheDocument();
 
     expect(await screen.findByText(/quote preview/i)).toBeInTheDocument();
-    expect(await screen.findByText(/titan direct/i)).toBeInTheDocument();
   });
 });

@@ -8,6 +8,8 @@ type QuotePreviewParams = {
   amountIn: string;
   slippageBps: number;
   priorityFee: number;
+  userPublicKey?: string;
+  enabled?: boolean;
 };
 
 type QuotePreviewState<T> =
@@ -37,12 +39,20 @@ export const useQuotePreview = (params: QuotePreviewParams) => {
     status: "idle",
   });
 
-  const { inMint, outMint, amountIn, slippageBps, priorityFee } = params;
+  const {
+    inMint,
+    outMint,
+    amountIn,
+    slippageBps,
+    priorityFee,
+    userPublicKey,
+    enabled = true,
+  } = params;
 
   useEffect(() => {
     const controller = new AbortController();
 
-    if (amountIn === "0") {
+    if (!enabled || amountIn === "0" || !userPublicKey) {
       setState({ status: "idle" });
       return () => controller.abort();
     }
@@ -60,6 +70,7 @@ export const useQuotePreview = (params: QuotePreviewParams) => {
             amountIn,
             slippageBps,
             priorityFee,
+            userPublicKey,
           }),
           signal: controller.signal,
         });
@@ -100,7 +111,7 @@ export const useQuotePreview = (params: QuotePreviewParams) => {
     requestQuote();
 
     return () => controller.abort();
-  }, [amountIn, inMint, outMint, priorityFee, slippageBps]);
+  }, [amountIn, enabled, inMint, outMint, priorityFee, slippageBps, userPublicKey]);
 
   return state;
 };

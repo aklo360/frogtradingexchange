@@ -1,8 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useWallet, useConnection } from "@solana/wallet-adapter-react";
+import { useWalletModal } from "@solana/wallet-adapter-react-ui";
+import { LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { useQuotePreview } from "@/lib/hooks/useQuotePreview";
-import { clampSlippage, toBaseUnits } from "@/lib/solana/validation";
+import { toBaseUnits } from "@/lib/solana/validation";
 import styles from "./SwapCard.module.css";
 
 type TokenOption = {
@@ -10,8 +13,6 @@ type TokenOption = {
   mint: string;
   decimals: number;
 };
-
-type PriorityFeeKey = "standard" | "fast" | "turbo";
 
 const DEMO_TOKENS: TokenOption[] = [
   {
@@ -31,11 +32,8 @@ const DEMO_TOKENS: TokenOption[] = [
   },
 ];
 
-const PRIORITY_FEE_PRESETS: Record<PriorityFeeKey, number> = {
-  standard: 0,
-  fast: 5_000,
-  turbo: 10_000,
-};
+const DEFAULT_SLIPPAGE_BPS = 50;
+const DEFAULT_PRIORITY_FEE = 0;
 
 const formatMint = (mint: string) =>
   `${mint.slice(0, 4)}…${mint.slice(mint.length - 4)}`;
@@ -51,13 +49,21 @@ const formatNumber = (value: number, maximumFractionDigits = 6) =>
 export const SwapCard = () => {
   const [fromMint, setFromMint] = useState(DEMO_TOKENS[0]);
   const [toMint, setToMint] = useState(DEMO_TOKENS[1]);
-  const [amountIn, setAmountIn] = useState("1.00");
-  const [slippageBps, setSlippageBps] = useState(50);
-  const [priorityFee, setPriorityFee] = useState<PriorityFeeKey>("standard");
+  const [amountIn, setAmountIn] = useState("0");
+  const [solBalanceLamports, setSolBalanceLamports] = useState<number | null>(
+    null,
+  );
+  const [balanceLoading, setBalanceLoading] = useState(false);
+
+  const { connection } = useConnection();
+  const { connected, publicKey, disconnect, disconnecting } = useWallet();
+  const { setVisible } = useWalletModal();
+
+  const walletConnected = Boolean(connected && publicKey);
+  const publicKeyBase58 = publicKey?.toBase58();
 
   const parsedAmount = Number(amountIn);
   const sanitizedAmount = Number.isFinite(parsedAmount) ? parsedAmount : 0;
-  const sanitizedSlippage = clampSlippage(slippageBps);
 
   const amountInBaseUnits =
     sanitizedAmount > 0
@@ -68,11 +74,49 @@ export const SwapCard = () => {
     inMint: fromMint.mint,
     outMint: toMint.mint,
     amountIn: amountInBaseUnits,
-    slippageBps: sanitizedSlippage,
-    priorityFee: PRIORITY_FEE_PRESETS[priorityFee],
+    slippageBps: DEFAULT_SLIPPAGE_BPS,
+    priorityFee: DEFAULT_PRIORITY_FEE,
+    userPublicKey: publicKeyBase58,
+    enabled: walletConnected,
   });
 
   const quoteData = quoteState.status === "success" ? quoteState.data : null;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!walletConnected || !publicKey) {
+      setSolBalanceLamports(null);
+      return;
+    }
+
+    const refreshBalance = async () => {
+      try {
+        setBalanceLoading(true);
+        const lamports = await connection.getBalance(publicKey, {
+          commitment: "processed",
+        });
+        if (!cancelled) {
+          setSolBalanceLamports(lamports);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setSolBalanceLamports(0);
+        }
+        console.error("Failed to load SOL balance", error);
+      } finally {
+        if (!cancelled) {
+          setBalanceLoading(false);
+        }
+      }
+    };
+
+    void refreshBalance();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [connection, publicKey, walletConnected]);
 
   const amountOutValue = useMemo(() => {
     if (!quoteData) return 0;
@@ -81,7 +125,7 @@ export const SwapCard = () => {
     return Number.isFinite(numeric) ? numeric / divisor : 0;
   }, [quoteData, toMint.decimals]);
 
-  const minReceived = amountOutValue * (1 - sanitizedSlippage / 10_000);
+  const minReceived = amountOutValue * (1 - DEFAULT_SLIPPAGE_BPS / 10_000);
   const pricePerIn = sanitizedAmount > 0 ? amountOutValue / sanitizedAmount : 0;
 
   const routersLabel = quoteData
@@ -95,6 +139,9 @@ export const SwapCard = () => {
     : "—";
 
   const quoteStatusLabel = (() => {
+    if (!walletConnected) {
+      return "Connect a wallet to start streaming quotes.";
+    }
     if (quoteState.status === "loading") return "Refreshing quote…";
     if (quoteState.status === "error") {
       const message = quoteState.error ?? "Unknown";
@@ -109,6 +156,9 @@ export const SwapCard = () => {
   })();
 
   const statusBadge = (() => {
+    if (!walletConnected) {
+      return { label: "Connect Wallet", tone: styles.statusPending };
+    }
     if (quoteState.status === "error") {
       return { label: "Error", tone: styles.statusError };
     }
@@ -124,15 +174,19 @@ export const SwapCard = () => {
   })();
 
   const formattedAmountOut =
-    amountOutValue > 0 ? formatNumber(amountOutValue, 6) : "0.000000";
+    walletConnected && amountOutValue > 0
+      ? formatNumber(amountOutValue, 6)
+      : "0.000000";
 
   const minReceivedLabel =
-    minReceived > 0
+    walletConnected && minReceived > 0
       ? `${formatNumber(minReceived, 6)} ${toMint.label}`
       : "—";
 
   const pricePerInLabel =
-    pricePerIn > 0 ? `${formatNumber(pricePerIn, 6)} ${toMint.label}` : "—";
+    walletConnected && pricePerIn > 0
+      ? `${formatNumber(pricePerIn, 6)} ${toMint.label}`
+      : "—";
 
   const handleSwitchTokens = () => {
     setFromMint(toMint);
@@ -145,21 +199,63 @@ export const SwapCard = () => {
     }
   };
 
+  const solBalance = solBalanceLamports !== null ? solBalanceLamports / LAMPORTS_PER_SOL : 0;
+  const balanceLabel = walletConnected
+    ? balanceLoading
+      ? "…"
+      : formatNumber(solBalance, 4)
+    : "—";
+
+  const isSolSelected = fromMint.mint === DEMO_TOKENS[0].mint;
+  const canUseBalanceShortcuts = walletConnected && isSolSelected && solBalanceLamports !== null;
+  const displayedBalance = isSolSelected ? balanceLabel : "—";
+
+  const toInputAmount = (value: number) => {
+    const fixed = value.toFixed(6);
+    return fixed.replace(/\.0+$|0+$/, "").replace(/\.$/, "");
+  };
+
+  const handleBalanceShortcut = (ratio: number) => {
+    if (!canUseBalanceShortcuts) return;
+    const target = (solBalanceLamports ?? 0) * ratio;
+    const amountInSol = target / LAMPORTS_PER_SOL;
+    setAmountIn(amountInSol > 0 ? toInputAmount(amountInSol) : "0");
+  };
+
+  const primaryActionLabel = walletConnected
+    ? "Swap (Coming Soon)"
+    : "Connect Wallet";
+
+  const primaryActionDisabled = walletConnected;
+
+  const handlePrimaryAction = () => {
+    if (!walletConnected) {
+      setVisible(true);
+    }
+  };
+
   return (
     <div className={styles.swapCard}>
       <header className={styles.header}>
         <div>
           <span className={styles.badge}>Swap</span>
           <h1>Frog Trading Exchange</h1>
-          <p className={styles.tagline}>
-            Titan-powered Solana swaps with a Super Nintendo frog gloss.
-          </p>
+          <p className={styles.tagline}>Powered by Titan for the best prices on Solana.</p>
         </div>
         <div className={styles.swapMeta}>
           <span className={`${styles.statusPill} ${statusBadge.tone}`}>
             {statusBadge.label}
           </span>
-          <span className={styles.metaNote}>Quotes auto-refresh in demo mode</span>
+          {walletConnected && (
+            <button
+              type="button"
+              className={styles.disconnectButton}
+              onClick={() => void disconnect()}
+              disabled={disconnecting}
+            >
+              Disconnect
+            </button>
+          )}
         </div>
       </header>
 
@@ -167,9 +263,29 @@ export const SwapCard = () => {
         <div className={styles.tokenRow}>
           <div className={styles.rowHeader}>
             <span className={styles.rowLabel}>You Pay</span>
-            <button type="button" className={styles.balanceButton}>
-              Balance: 0.00 {fromMint.label}
-            </button>
+            <div className={styles.balanceGroup}>
+              <span className={styles.balanceLabel}>
+                Balance: {displayedBalance} {fromMint.label}
+              </span>
+              {canUseBalanceShortcuts && (
+                <div className={styles.balanceShortcuts}>
+                  <button
+                    type="button"
+                    className={styles.shortcutButton}
+                    onClick={() => handleBalanceShortcut(0.5)}
+                  >
+                    50%
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.shortcutButton}
+                    onClick={() => handleBalanceShortcut(1)}
+                  >
+                    Max
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className={styles.tokenControls}>
@@ -230,7 +346,41 @@ export const SwapCard = () => {
           onClick={handleSwitchTokens}
           aria-label="Switch tokens"
         >
-          <span className={styles.switchIcon} aria-hidden="true" />
+          <svg
+            className={styles.switchIcon}
+            viewBox="0 0 48 32"
+            role="img"
+            aria-hidden="true"
+            focusable="false"
+            shapeRendering="crispEdges"
+          >
+            <g className={styles.arrowUp}>
+              <rect x="8" y="2" width="4" height="4" />
+              <rect x="4" y="6" width="4" height="4" />
+              <rect x="8" y="6" width="4" height="4" />
+              <rect x="12" y="6" width="4" height="4" />
+              <rect x="0" y="10" width="4" height="4" />
+              <rect x="4" y="10" width="4" height="4" />
+              <rect x="8" y="10" width="4" height="4" />
+              <rect x="12" y="10" width="4" height="4" />
+              <rect x="16" y="10" width="4" height="4" />
+              <rect x="8" y="14" width="4" height="4" />
+              <rect x="8" y="18" width="4" height="4" />
+            </g>
+            <g className={styles.arrowDown} transform="translate(24 0)">
+              <rect x="8" y="26" width="4" height="4" />
+              <rect x="4" y="22" width="4" height="4" />
+              <rect x="8" y="22" width="4" height="4" />
+              <rect x="12" y="22" width="4" height="4" />
+              <rect x="0" y="18" width="4" height="4" />
+              <rect x="4" y="18" width="4" height="4" />
+              <rect x="8" y="18" width="4" height="4" />
+              <rect x="12" y="18" width="4" height="4" />
+              <rect x="16" y="18" width="4" height="4" />
+              <rect x="8" y="14" width="4" height="4" />
+              <rect x="8" y="10" width="4" height="4" />
+            </g>
+          </svg>
           <span className={styles.srOnly}>Switch tokens</span>
         </button>
 
@@ -238,7 +388,7 @@ export const SwapCard = () => {
           <div className={styles.rowHeader}>
             <span className={styles.rowLabel}>You Receive</span>
             <span className={styles.estimateTag}>
-              Est. Output: {formattedAmountOut} {toMint.label}
+              ≈ {formattedAmountOut} {toMint.label}
             </span>
           </div>
 
@@ -284,65 +434,38 @@ export const SwapCard = () => {
         </div>
       </section>
 
-      <section className={styles.settingsRow}>
-        <div className={styles.setting}>
-          <span className={styles.settingLabel}>Slippage (bps)</span>
-          <input
-            className={styles.settingControl}
-            id="slippage"
-            inputMode="numeric"
-            value={slippageBps}
-            onChange={(event) => {
-              const next = Number(event.target.value);
-              setSlippageBps(Number.isFinite(next) ? next : slippageBps);
-            }}
-            min={5}
-            max={500}
-            step={5}
-          />
-        </div>
-        <div className={styles.setting}>
-          <span className={styles.settingLabel}>Priority Fee</span>
-          <select
-            id="priority"
-            className={styles.settingControl}
-            value={priorityFee}
-            onChange={(event) =>
-              setPriorityFee(event.target.value as PriorityFeeKey)
-            }
-          >
-            <option value="standard">Standard</option>
-            <option value="fast">Fast</option>
-            <option value="turbo">Turbo</option>
-          </select>
-        </div>
-      </section>
+      {walletConnected && (
+        <section className={styles.quoteSummary}>
+          <h2>Quote Preview</h2>
+          <div className={styles.summaryGrid}>
+            <div className={styles.summaryItem}>
+              <span className={styles.summaryLabel}>Route</span>
+              <span className={styles.summaryValue}>{routersLabel}</span>
+            </div>
+            <div className={styles.summaryItem}>
+              <span className={styles.summaryLabel}>Price Impact</span>
+              <span className={styles.summaryValue}>{priceImpactLabel}</span>
+            </div>
+            <div className={styles.summaryItem}>
+              <span className={styles.summaryLabel}>1 {fromMint.label}</span>
+              <span className={styles.summaryValue}>{pricePerInLabel}</span>
+            </div>
+            <div className={styles.summaryItem}>
+              <span className={styles.summaryLabel}>Min Received</span>
+              <span className={styles.summaryValue}>{minReceivedLabel}</span>
+            </div>
+          </div>
+          <p className={styles.summaryHelp}>{quoteStatusLabel}</p>
+        </section>
+      )}
 
-      <section className={styles.quoteSummary}>
-        <h2>Quote Preview</h2>
-        <div className={styles.summaryGrid}>
-          <div className={styles.summaryItem}>
-            <span className={styles.summaryLabel}>Route</span>
-            <span className={styles.summaryValue}>{routersLabel}</span>
-          </div>
-          <div className={styles.summaryItem}>
-            <span className={styles.summaryLabel}>Price Impact</span>
-            <span className={styles.summaryValue}>{priceImpactLabel}</span>
-          </div>
-          <div className={styles.summaryItem}>
-            <span className={styles.summaryLabel}>1 {fromMint.label}</span>
-            <span className={styles.summaryValue}>{pricePerInLabel}</span>
-          </div>
-          <div className={styles.summaryItem}>
-            <span className={styles.summaryLabel}>Min Received</span>
-            <span className={styles.summaryValue}>{minReceivedLabel}</span>
-          </div>
-        </div>
-        <p className={styles.summaryHelp}>{quoteStatusLabel}</p>
-      </section>
-
-      <button className={styles.swapButton} type="button" disabled>
-        Connect Wallet to Swap
+      <button
+        className={styles.swapButton}
+        type="button"
+        onClick={handlePrimaryAction}
+        disabled={primaryActionDisabled || disconnecting}
+      >
+        {primaryActionLabel}
       </button>
     </div>
   );
