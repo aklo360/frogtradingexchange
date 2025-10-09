@@ -42,6 +42,11 @@ export const useQuotePreview = (params: QuotePreviewParams) => {
   useEffect(() => {
     const controller = new AbortController();
 
+    if (amountIn === "0") {
+      setState({ status: "idle" });
+      return () => controller.abort();
+    }
+
     const requestQuote = async () => {
       setState({ status: "loading" });
 

@@ -28,15 +28,18 @@ describe("SwapCard", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders the default swap inputs", async () => {
+  it("renders the swap layout with quote data", async () => {
     render(<SwapCard />);
 
     expect(
       screen.getByRole("heading", { name: /frog trading exchange/i }),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText(/from/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/to/i)).toBeInTheDocument();
+    expect(screen.getByText(/you pay/i)).toBeInTheDocument();
+    expect(screen.getByText(/you receive/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /switch tokens/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/select token to pay/i)).toBeInTheDocument();
+
     expect(await screen.findByText(/quote preview/i)).toBeInTheDocument();
-    expect(await screen.findByText(/Titan Direct/i)).toBeInTheDocument();
+    expect(await screen.findByText(/titan direct/i)).toBeInTheDocument();
   });
 });
