@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import { useQuotePreview } from "@/lib/hooks/useQuotePreview";
 import { clampSlippage, toBaseUnits } from "@/lib/solana/validation";
