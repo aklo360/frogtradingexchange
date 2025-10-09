@@ -23,11 +23,28 @@ type QuoteRequest = {
   userPublicKey?: string;
 };
 
+type TitanInstructionAccountPayload = {
+  p: unknown;
+  s?: boolean;
+  w?: boolean;
+};
+
+type TitanInstructionPayload = {
+  p: unknown;
+  a?: TitanInstructionAccountPayload[];
+  d?: unknown;
+};
+
 type TitanSwapRoute = {
   inAmount: number | bigint;
   outAmount: number | bigint;
   slippageBps?: number;
   steps?: Array<{ label?: string }>;
+  transaction?: unknown;
+  instructions?: TitanInstructionPayload[];
+  addressLookupTables?: unknown;
+  computeUnits?: number | bigint;
+  computeUnitsSafe?: number | bigint;
 };
 
 type TitanSwapQuotes = {
@@ -45,6 +62,50 @@ const bigIntToString = (value: number | bigint | undefined): string =>
   toBigInt(value).toString();
 
 const toBuffer = (value: string) => Buffer.from(bs58.decode(value));
+
+const bufferFromUnknown = (value: unknown): Buffer => {
+  if (Buffer.isBuffer(value)) return Buffer.from(value);
+  if (value instanceof Uint8Array) return Buffer.from(value);
+  if (Array.isArray(value)) return Buffer.from(value as number[]);
+  if (typeof value === "string") return Buffer.from(value, "base64");
+  throw new Error("Unsupported buffer type");
+};
+
+const toPubkeyString = (value: unknown): string => {
+  if (typeof value === "string") return value;
+  if (value instanceof Uint8Array || Buffer.isBuffer(value)) {
+    return bs58.encode(Buffer.from(value));
+  }
+  if (Array.isArray(value)) {
+    return bs58.encode(Buffer.from(value as number[]));
+  }
+  throw new Error("Unsupported pubkey type");
+};
+
+const normalizeInstructionAccount = (account: TitanInstructionAccountPayload) => ({
+  pubkey: toPubkeyString(account?.p),
+  isSigner: Boolean(account?.s),
+  isWritable: Boolean(account?.w),
+});
+
+const normalizeInstruction = (instruction: TitanInstructionPayload) => ({
+  programId: toPubkeyString(instruction?.p),
+  accounts: Array.isArray(instruction?.a)
+    ? instruction.a.map(normalizeInstructionAccount)
+    : [],
+  data: instruction?.d
+    ? bufferFromUnknown(instruction.d).toString("base64")
+    : "",
+});
+
+const toTransactionBuffer = (value: unknown): Buffer | null => {
+  if (!value) return null;
+  try {
+    return bufferFromUnknown(value);
+  } catch {
+    return null;
+  }
+};
 
 const ensureWsUrl = (template: string, region?: string) => {
   let url = template;
@@ -104,6 +165,12 @@ const pickBestRoute = (quotes: TitanSwapQuotes["quotes"]) => {
     if (diff === 0n) return 0;
     return diff > 0n ? 1 : -1;
   });
+  for (const entry of sorted) {
+    const [, route] = entry;
+    if (toTransactionBuffer(route.transaction)) {
+      return entry;
+    }
+  }
   return sorted[0];
 };
 
@@ -116,6 +183,15 @@ const transformQuotes = (
     .map((step) => step.label)
     .filter((label): label is string => Boolean(label));
 
+  const computeUnits =
+    bestRoute.computeUnits !== undefined && bestRoute.computeUnits !== null
+      ? Number(toBigInt(bestRoute.computeUnits))
+      : undefined;
+  const computeUnitsSafe =
+    bestRoute.computeUnitsSafe !== undefined && bestRoute.computeUnitsSafe !== null
+      ? Number(toBigInt(bestRoute.computeUnitsSafe))
+      : undefined;
+
   return {
     status: "executable",
     updatedAt: new Date().toISOString(),
@@ -127,6 +203,18 @@ const transformQuotes = (
     routers: routers.length > 0 ? routers : [providerId],
     provider: providerId,
     routeId: swapQuotes.id,
+    transactionBase64: toTransactionBuffer(bestRoute.transaction)?.toString(
+      "base64",
+    ),
+    inAmount: bigIntToString(bestRoute.inAmount),
+    instructions: Array.isArray(bestRoute.instructions)
+      ? bestRoute.instructions.map(normalizeInstruction)
+      : [],
+    addressLookupTables: Array.isArray(bestRoute.addressLookupTables)
+      ? bestRoute.addressLookupTables.map(toPubkeyString)
+      : [],
+    computeUnits,
+    computeUnitsSafe,
     executable: true,
     simulated: true,
   };

@@ -377,6 +377,25 @@
   transform: translateY(-2px);
 }
 
+.swapFeedback {
+  margin-top: 0.75rem;
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  color: rgba(148, 255, 239, 0.85);
+  word-break: break-word;
+}
+
+.swapFeedback a {
+  color: #14f195;
+}
+
+.swapFeedbackError {
+  margin-top: 0.75rem;
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  color: #ff7a9c;
+}
+
 .srOnly {
   position: absolute;
   width: 1px;

@@ -1,9 +1,17 @@
 "use client";
 
+import { Buffer } from "buffer";
 import { useEffect, useMemo, useState } from "react";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
-import { LAMPORTS_PER_SOL } from "@solana/web3.js";
+import {
+  AddressLookupTableAccount,
+  LAMPORTS_PER_SOL,
+  PublicKey,
+  TransactionInstruction,
+  TransactionMessage,
+  VersionedTransaction,
+} from "@solana/web3.js";
 import { useQuotePreview } from "@/lib/hooks/useQuotePreview";
 import { toBaseUnits } from "@/lib/solana/validation";
 import styles from "./SwapCard.module.css";
@@ -12,6 +20,18 @@ type TokenOption = {
   label: string;
   mint: string;
   decimals: number;
+};
+
+type QuoteInstructionAccount = {
+  pubkey: string;
+  isSigner: boolean;
+  isWritable: boolean;
+};
+
+type QuoteInstruction = {
+  programId: string;
+  accounts: QuoteInstructionAccount[];
+  data: string;
 };
 
 const DEMO_TOKENS: TokenOption[] = [
@@ -54,9 +74,13 @@ export const SwapCard = () => {
     null,
   );
   const [balanceLoading, setBalanceLoading] = useState(false);
+  const [isSwapping, setIsSwapping] = useState(false);
+  const [swapError, setSwapError] = useState<string | null>(null);
+  const [lastSignature, setLastSignature] = useState<string | null>(null);
 
   const { connection } = useConnection();
-  const { connected, publicKey, disconnect, disconnecting } = useWallet();
+  const { connected, publicKey, disconnect, disconnecting, sendTransaction } =
+    useWallet();
   const { setVisible } = useWalletModal();
 
   const walletConnected = Boolean(connected && publicKey);
@@ -188,6 +212,75 @@ export const SwapCard = () => {
       ? `${formatNumber(pricePerIn, 6)} ${toMint.label}`
       : "—";
 
+  const decodeBase64ToUint8Array = (value: string) => {
+    if (typeof atob === "function") {
+      const binary = atob(value);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+      }
+      return bytes;
+    }
+
+    const buffer = Buffer.from(value, "base64");
+    return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  };
+
+  const toTransactionInstruction = (instruction: QuoteInstruction) =>
+    new TransactionInstruction({
+      programId: new PublicKey(instruction.programId),
+      keys: instruction.accounts.map((account) => ({
+        pubkey: new PublicKey(account.pubkey),
+        isSigner: account.isSigner,
+        isWritable: account.isWritable,
+      })),
+      data: Buffer.from(instruction.data, "base64"),
+    });
+
+  const loadLookupTables = async (addresses: string[]) => {
+    if (!addresses.length) {
+      return [] as AddressLookupTableAccount[];
+    }
+
+    const tables = await Promise.all(
+      addresses.map(async (address) => {
+        const lookup = await connection.getAddressLookupTable(
+          new PublicKey(address),
+        );
+        return lookup.value ?? null;
+      }),
+    );
+
+    return tables.filter(
+      (table): table is AddressLookupTableAccount => Boolean(table),
+    );
+  };
+
+  const buildTransactionFromInstructions = async () => {
+    if (!quoteData?.instructions?.length || !publicKey) {
+      throw new Error("Quote missing route instructions");
+    }
+
+    const instructionList =
+      quoteData.instructions?.map(toTransactionInstruction) ?? [];
+    const lookupTables = await loadLookupTables(
+      quoteData.addressLookupTables ?? [],
+    );
+    const { blockhash, lastValidBlockHeight } =
+      await connection.getLatestBlockhash("finalized");
+    const message = new TransactionMessage({
+      payerKey: publicKey,
+      recentBlockhash: blockhash,
+      instructions: instructionList,
+    }).compileToV0Message(lookupTables);
+
+    return {
+      transaction: new VersionedTransaction(message),
+      blockhash,
+      lastValidBlockHeight,
+    };
+  };
+
   const handleSwitchTokens = () => {
     setFromMint(toMint);
     setToMint(fromMint);
@@ -222,16 +315,104 @@ export const SwapCard = () => {
     setAmountIn(amountInSol > 0 ? toInputAmount(amountInSol) : "0");
   };
 
-  const primaryActionLabel = walletConnected
-    ? "Swap (Coming Soon)"
-    : "Connect Wallet";
+  useEffect(() => {
+    setSwapError(null);
+    setLastSignature(null);
+    setIsSwapping(false);
+  }, [quoteData?.routeId, walletConnected]);
 
-  const primaryActionDisabled = walletConnected;
+  const hasExecutableQuote = Boolean(
+    walletConnected &&
+      quoteData &&
+      (quoteData.transactionBase64 ||
+        (quoteData.instructions?.length ?? 0) > 0),
+  );
+
+  const handleSwap = async () => {
+    if (!walletConnected) {
+      setVisible(true);
+      return;
+    }
+
+    if (!publicKey || !sendTransaction) {
+      setSwapError("Wallet does not support sending transactions");
+      return;
+    }
+
+    if (!hasExecutableQuote) {
+      setSwapError("Quote not ready for execution");
+      return;
+    }
+
+    try {
+      setIsSwapping(true);
+      setSwapError(null);
+
+      let transaction: VersionedTransaction;
+      let confirmationParams: { blockhash: string; lastValidBlockHeight: number } | null =
+        null;
+
+      if (quoteData.transactionBase64) {
+        const bytes = decodeBase64ToUint8Array(quoteData.transactionBase64);
+        transaction = VersionedTransaction.deserialize(bytes);
+      } else {
+        const built = await buildTransactionFromInstructions();
+        transaction = built.transaction;
+        confirmationParams = {
+          blockhash: built.blockhash,
+          lastValidBlockHeight: built.lastValidBlockHeight,
+        };
+      }
+
+      const signature = await sendTransaction(transaction, connection, {
+        skipPreflight: false,
+      });
+
+      if (confirmationParams) {
+        await connection.confirmTransaction(
+          {
+            signature,
+            blockhash: confirmationParams.blockhash,
+            lastValidBlockHeight: confirmationParams.lastValidBlockHeight,
+          },
+          "confirmed",
+        );
+      } else {
+        await connection.confirmTransaction(signature, "confirmed");
+      }
+
+      setLastSignature(signature);
+    } catch (error) {
+      console.error("Swap failed", error);
+      setSwapError((error as Error).message ?? "Swap failed");
+    } finally {
+      setIsSwapping(false);
+    }
+  };
+
+  const primaryActionLabel = (() => {
+    if (!walletConnected) return "Connect Wallet";
+    if (isSwapping) return "Swapping...";
+    if (hasExecutableQuote) return "Swap";
+    if (quoteState.status === "loading") return "Fetching quote...";
+    return "Swap (Coming Soon)";
+  })();
+
+  const primaryActionDisabled = walletConnected
+    ? !hasExecutableQuote || isSwapping
+    : false;
 
   const handlePrimaryAction = () => {
     if (!walletConnected) {
       setVisible(true);
+      return;
     }
+
+    if (!hasExecutableQuote || isSwapping) {
+      return;
+    }
+
+    void handleSwap();
   };
 
   return (
@@ -467,6 +648,22 @@ export const SwapCard = () => {
       >
         {primaryActionLabel}
       </button>
+      {swapError && (
+        <p className={styles.swapFeedbackError}>{swapError}</p>
+      )}
+      {lastSignature && !swapError && (
+        <p className={styles.swapFeedback}>
+          Swap sent:
+          {" "}
+          <a
+            href={`https://solscan.io/tx/${lastSignature}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {lastSignature}
+          </a>
+        </p>
+      )}
     </div>
   );
 };

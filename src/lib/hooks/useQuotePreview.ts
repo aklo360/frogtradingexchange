@@ -18,12 +18,32 @@ type QuotePreviewState<T> =
   | { status: "success"; data: T }
   | { status: "error"; error: string };
 
+type QuoteInstructionAccount = {
+  pubkey: string;
+  isSigner: boolean;
+  isWritable: boolean;
+};
+
+type QuoteInstruction = {
+  programId: string;
+  accounts: QuoteInstructionAccount[];
+  data: string;
+};
+
 type QuotePreviewResponse = {
   amountOut: string;
   priceImpactBps: number;
   routers: Array<{ id?: string; name?: string } | string>;
   executable: boolean;
   updatedAt: string;
+  provider?: string;
+  routeId?: string;
+  transactionBase64?: string;
+  inAmount?: string;
+  instructions?: QuoteInstruction[];
+  addressLookupTables?: string[];
+  computeUnits?: number;
+  computeUnitsSafe?: number;
 };
 
 type QuotePreview = {
@@ -32,6 +52,12 @@ type QuotePreview = {
   routers: string[];
   executable: boolean;
   updatedAt: string;
+  provider?: string;
+  routeId?: string;
+  transactionBase64?: string;
+  inAmount?: string;
+  instructions?: QuoteInstruction[];
+  addressLookupTables?: string[];
 };
 
 export const useQuotePreview = (params: QuotePreviewParams) => {
@@ -94,6 +120,14 @@ export const useQuotePreview = (params: QuotePreviewParams) => {
             routers,
             executable: raw.executable,
             updatedAt: raw.updatedAt,
+            provider: raw.provider,
+            routeId: raw.routeId,
+            transactionBase64: raw.transactionBase64,
+            inAmount: raw.inAmount,
+            instructions: raw.instructions ?? [],
+            addressLookupTables: raw.addressLookupTables ?? [],
+            computeUnits: raw.computeUnits,
+            computeUnitsSafe: raw.computeUnitsSafe,
           },
         });
       } catch (error) {
