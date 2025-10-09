@@ -40,21 +40,11 @@
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 0.75rem;
+  gap: 0.5rem;
   font-size: 0.65rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: rgba(234, 253, 244, 0.6);
-}
-
-.statusPill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.4rem 0.85rem;
-  border-radius: 999px;
-  font-size: 0.6rem;
-  letter-spacing: 0.12em;
 }
 
 .disconnectButton {
@@ -65,6 +55,8 @@
   font-size: 0.55rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  font-family: var(--font-press-start), var(--font-geist-sans), system-ui,
+    sans-serif;
   color: rgba(148, 255, 239, 0.8);
   cursor: pointer;
   transition: border-color 0.2s ease, color 0.2s ease;
@@ -78,24 +70,6 @@
 .disconnectButton:disabled {
   opacity: 0.6;
   cursor: not-allowed;
-}
-
-.statusSuccess {
-  background: linear-gradient(135deg, rgba(20, 241, 149, 0.5), rgba(148, 255, 239, 0.4));
-  color: #042b1c;
-  border: 1px solid rgba(20, 241, 149, 0.6);
-}
-
-.statusPending {
-  background: rgba(148, 255, 239, 0.15);
-  color: #94ffef;
-  border: 1px solid rgba(148, 255, 239, 0.35);
-}
-
-.statusError {
-  background: rgba(255, 86, 120, 0.2);
-  color: #ffb4c5;
-  border: 1px solid rgba(255, 86, 120, 0.45);
 }
 
 .tradeBox {

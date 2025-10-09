@@ -179,23 +179,6 @@ export const SwapCard = () => {
     return "Awaiting input";
   })();
 
-  const statusBadge = (() => {
-    if (!walletConnected) {
-      return { label: "Connect Wallet", tone: styles.statusPending };
-    }
-    if (quoteState.status === "error") {
-      return { label: "Error", tone: styles.statusError };
-    }
-    if (quoteState.status === "loading") {
-      return { label: "Loading", tone: styles.statusPending };
-    }
-    if (quoteData) {
-      return quoteData.executable
-        ? { label: "Executable", tone: styles.statusSuccess }
-        : { label: "Stale", tone: styles.statusPending };
-    }
-    return { label: "Idle", tone: styles.statusPending };
-  })();
 
   const formattedAmountOut =
     walletConnected && amountOutValue > 0
@@ -422,9 +405,6 @@ export const SwapCard = () => {
           <span className={styles.badge}>Swap</span>
         </div>
         <div className={styles.swapMeta}>
-          <span className={`${styles.statusPill} ${statusBadge.tone}`}>
-            {statusBadge.label}
-          </span>
           {walletConnected && (
             <button
               type="button"
