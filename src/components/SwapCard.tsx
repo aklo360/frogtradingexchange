@@ -230,7 +230,8 @@ export const SwapCard = () => {
           onClick={handleSwitchTokens}
           aria-label="Switch tokens"
         >
-          ⇅
+          <span className={styles.switchIcon} aria-hidden="true" />
+          <span className={styles.srOnly}>Switch tokens</span>
         </button>
 
         <div className={styles.tokenRow}>

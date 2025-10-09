@@ -217,21 +217,88 @@
 
 .switchButton {
   justify-self: center;
-  width: 54px;
-  height: 54px;
-  border-radius: 50%;
-  border: 2px solid rgba(148, 255, 239, 0.45);
-  background: radial-gradient(circle at 30% 30%, #14f195, #9945ff);
-  color: #050315;
-  font-size: 1.4rem;
-  line-height: 1;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  border: 3px solid rgba(148, 255, 239, 0.5);
+  background: linear-gradient(145deg, rgba(6, 0, 22, 0.95), rgba(24, 10, 54, 0.85));
   cursor: pointer;
-  box-shadow: 0 0 14px rgba(148, 255, 239, 0.3);
-  transition: transform 0.2s ease;
+  box-shadow:
+    inset 0 0 0 2px rgba(20, 241, 149, 0.15),
+    0 0 16px rgba(148, 255, 239, 0.25);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 .switchButton:hover {
-  transform: rotate(180deg);
+  border-color: rgba(20, 241, 149, 0.75);
+  box-shadow:
+    inset 0 0 0 2px rgba(20, 241, 149, 0.3),
+    0 0 18px rgba(148, 255, 239, 0.45);
+  transform: translateY(-2px);
+}
+
+.switchIcon {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  display: block;
+}
+
+.switchIcon::before,
+.switchIcon::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  background: #14f195;
+  transform: translateX(-50%);
+  image-rendering: pixelated;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.switchIcon::before {
+  top: 2px;
+  box-shadow:
+    -4px 4px 0 0 #14f195,
+    0 4px 0 0 #94ffef,
+    4px 4px 0 0 #14f195,
+    0 8px 0 0 #94ffef,
+    0 12px 0 0 #94ffef;
+}
+
+.switchIcon::after {
+  bottom: 2px;
+  box-shadow:
+    -4px -4px 0 0 #94ffef,
+    0 -4px 0 0 #14f195,
+    4px -4px 0 0 #94ffef,
+    0 -8px 0 0 #14f195,
+    0 -12px 0 0 #14f195;
+}
+
+.switchButton:hover .switchIcon::before,
+.switchButton:hover .switchIcon::after {
+  background: #94ffef;
+  box-shadow:
+    -4px 4px 0 0 #94ffef,
+    0 4px 0 0 #14f195,
+    4px 4px 0 0 #94ffef,
+    0 8px 0 0 #14f195,
+    0 12px 0 0 #14f195;
+}
+
+.switchButton:hover .switchIcon::after {
+  box-shadow:
+    -4px -4px 0 0 #14f195,
+    0 -4px 0 0 #94ffef,
+    4px -4px 0 0 #14f195,
+    0 -8px 0 0 #94ffef,
+    0 -12px 0 0 #94ffef;
 }
 
 .estimateTag {
