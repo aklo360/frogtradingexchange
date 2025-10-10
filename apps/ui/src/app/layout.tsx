@@ -24,6 +24,11 @@ export const metadata: Metadata = {
   title: "Frog Trading Exchange",
   description:
     "Titan-powered Solana swap terminal with retro SNES frog theming.",
+  icons: {
+    icon: "/sbficon.png",
+    shortcut: "/sbficon.png",
+    apple: "/sbficon.png",
+  },
 };
 
 export default function RootLayout({

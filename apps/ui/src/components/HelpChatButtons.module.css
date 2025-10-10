@@ -1,0 +1,45 @@
+.btn {
+  position: fixed;
+  bottom: 24px;
+  width: 48px;
+  height: 48px;
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 150ms ease;
+  z-index: 5;
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(20, 241, 149, 0.35);
+  background: rgba(20, 241, 149, 0.18);
+  border-radius: 12px;
+}
+
+.btn:focus-visible { outline: 2px dashed rgba(234, 253, 244, 0.7); outline-offset: 2px; }
+
+.helpBtn { right: 82px; }
+.chatBtn { right: 24px; }
+
+.icon {
+  width: 28px;
+  height: 28px;
+  image-rendering: pixelated;
+}
+
+.helpIcon {
+  height: 25px; /* ~10% smaller than 28px */
+  width: auto;
+}
+
+@media (max-width: 768px) {
+  .btn { bottom: 16px; width: 44px; height: 44px; }
+  .helpBtn { right: 70px; }
+  .chatBtn { right: 16px; }
+  .icon { width: 26px; height: 26px; }
+  .helpIcon { height: 23px; }
+}

@@ -36,6 +36,8 @@ yarn-error.log*
 
 # vercel
 .vercel
+.wrangler/
+apps/*/.wrangler/
 
 # typescript
 *.tsbuildinfo

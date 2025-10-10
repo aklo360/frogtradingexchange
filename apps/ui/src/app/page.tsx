@@ -1,12 +1,41 @@
+"use client";
+
+import { useState } from "react";
 import { SwapCard } from "@/components/SwapCard";
+import { WalletButton } from "@/components/WalletButton";
+import { BackgroundAudio } from "@/components/BackgroundAudio";
+import { SpeakerToggle } from "@/components/SpeakerToggle";
+import { HelpButton } from "@/components/HelpButton";
+import { ChatButton } from "@/components/ChatButton";
 import styles from "./page.module.css";
 
 export default function Home() {
+  const [muted, setMuted] = useState(false);
+
   return (
     <main className={styles.main}>
-      <header className={styles.siteHeader}>
-        <h1>Frog Trading Exchange</h1>
-        <p>Powered by Titan for the best prices on Solana.</p>
+      <BackgroundAudio muted={muted} />
+      <header className={styles.headerBar}>
+        <div className={styles.headerInner}>
+          <div className={styles.brandGroup}>
+            <img
+              src="/sbficon.png"
+              alt="Pixel frog icon"
+              className={styles.headerIcon}
+            />
+            <h1>Frog Trading Exchange</h1>
+            <img
+              src="/sbficon.png"
+              alt=""
+              aria-hidden="true"
+              className={styles.headerIcon}
+            />
+          </div>
+        </div>
+        <div className={styles.rightControls}>
+          <WalletButton className={styles.walletButton} />
+        </div>
+        <p className={styles.tagline}>Powered by Titan for the best prices on Solana.</p>
       </header>
       <div className={styles.tickerBar} aria-label="Top Solana memecoins">
         <div className={styles.tickerTrack}>
@@ -33,6 +62,9 @@ export default function Home() {
         </div>
       </div>
       <SwapCard />
+      <SpeakerToggle muted={muted} onToggle={setMuted} />
+      <HelpButton />
+      <ChatButton />
     </main>
   );
 }

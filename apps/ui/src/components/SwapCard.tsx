@@ -172,9 +172,7 @@ export const SwapCard = () => {
       return `Error: ${message}`;
     }
     if (quoteData) {
-      return quoteData.executable
-        ? `Executable as of ${new Date(quoteData.updatedAt).toLocaleTimeString()}`
-        : "Quote stale";
+      return quoteData.executable ? "Quote ready" : "Quote stale";
     }
     return "Awaiting input";
   })();
@@ -602,19 +600,10 @@ export const SwapCard = () => {
               <span className={styles.summaryValue}>{routersLabel}</span>
             </div>
             <div className={styles.summaryItem}>
-              <span className={styles.summaryLabel}>Price Impact</span>
-              <span className={styles.summaryValue}>{priceImpactLabel}</span>
-            </div>
-            <div className={styles.summaryItem}>
-              <span className={styles.summaryLabel}>1 {fromMint.label}</span>
-              <span className={styles.summaryValue}>{pricePerInLabel}</span>
-            </div>
-            <div className={styles.summaryItem}>
               <span className={styles.summaryLabel}>Min Received</span>
               <span className={styles.summaryValue}>{minReceivedLabel}</span>
             </div>
           </div>
-          <p className={styles.summaryHelp}>{quoteStatusLabel}</p>
         </section>
       )}
 
