@@ -1,8 +1,6 @@
-import nextWorker from "./.vercel/output/static/_worker.js";
-
 const DEFAULT_API_ORIGIN = "https://frogx-api.aklo.workers.dev";
 
-const needsBody = (method) => {
+const methodHasBody = (method) => {
   const upper = method.toUpperCase();
   return upper !== "GET" && upper !== "HEAD";
 };
@@ -16,19 +14,24 @@ const cloneHeaders = (headers) => {
   return copy;
 };
 
-async function proxyFetch(request, targetUrl) {
+const proxyFetch = async (request, target) => {
   const init = {
     method: request.method,
     headers: cloneHeaders(request.headers),
     redirect: request.redirect,
   };
 
-  if (needsBody(request.method)) {
+  if (methodHasBody(request.method)) {
     init.body = await request.arrayBuffer();
   }
 
-  return fetch(targetUrl, init);
-}
+  return fetch(target, init);
+};
+
+const getNextWorker = async () => {
+  const mod = await import("./.vercel/output/static/_worker.js");
+  return mod.default ?? mod;
+};
 
 export default {
   async fetch(request, env, ctx) {
@@ -43,12 +46,14 @@ export default {
     }
 
     if (url.pathname === "/rpc") {
-      if (!env.SOLANA_RPC_URL) {
+      const rpcUrl = env.SOLANA_RPC_URL ?? env.SOLANA_RPC_ENDPOINT;
+      if (!rpcUrl) {
         return new Response("SOLANA_RPC_URL not configured", { status: 500 });
       }
-      return proxyFetch(request, env.SOLANA_RPC_URL);
+      return proxyFetch(request, rpcUrl);
     }
 
+    const nextWorker = await getNextWorker();
     return nextWorker.fetch(request, env, ctx);
   },
 };
