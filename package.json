@@ -1,44 +1,16 @@
 {
   "name": "frogtradingexchange",
-  "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "next dev --turbopack",
-    "build": "next build --turbopack",
-    "start": "next start",
-    "lint": "eslint",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:e2e": "vitest run --config tests/vitest.e2e.config.ts",
-    "prewarm:blockhash": "pnpm exec tsx scripts/prewarm-blockhash.ts"
-  },
-  "dependencies": {
-    "bs58": "^6.0.0",
-    "msgpackr": "^1.11.2",
-    "@solana/wallet-adapter-base": "^0.9.27",
-    "@solana/wallet-adapter-react": "^0.15.39",
-    "@solana/wallet-adapter-react-ui": "^0.9.39",
-    "@solana/wallet-adapter-wallets": "^0.19.37",
-    "@solana/web3.js": "^1.98.4",
-    "next": "15.5.4",
-    "react": "19.1.0",
-    "react-dom": "19.1.0",
-    "ws": "^8.18.0"
+    "dev": "pnpm -r --parallel dev",
+    "build": "pnpm -r build",
+    "deploy": "pnpm --filter @frogx/api deploy && pnpm --filter @frogx/ui deploy:pages"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3",
-    "@testing-library/jest-dom": "^6.6.3",
-    "@testing-library/react": "^16.1.0",
-    "@testing-library/user-event": "^14.6.1",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "@vitejs/plugin-react": "^4.3.4",
-    "eslint": "^9",
-    "eslint-config-next": "15.5.4",
-    "jsdom": "^26.0.0",
-    "tsx": "^4.19.2",
-    "typescript": "^5",
-    "vitest": "^3.0.2"
+    "dotenv": "^16.4.5"
   }
 }

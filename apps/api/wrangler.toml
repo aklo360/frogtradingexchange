@@ -1,0 +1,13 @@
+name = "frogx-api"
+main = "src/index.ts"
+compatibility_date = "2025-10-09"
+
+[vars]
+TITAN_ENV = "demo"
+TITAN_DEMO_DEFAULT_REGION = "us1.api.demo.titan.exchange"
+TITAN_DEMO_REGION_ORDER = "us1.api.demo.titan.exchange,de1.api.demo.titan.exchange,jp1.api.demo.titan.exchange"
+TITAN_DEMO_WS_PATH = "/api/v1/ws"
+TITAN_DEMO_HTTP_BASE_SCHEME = "https"
+TITAN_DEMO_WS_BASE_SCHEME = "wss"
+QUOTE_FRESHNESS_SECONDS = "3"
+SOLANA_COMMITMENT = "confirmed"

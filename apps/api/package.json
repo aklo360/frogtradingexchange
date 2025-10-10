@@ -1,0 +1,19 @@
+{
+  "name": "@frogx/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node ../../scripts/dev-worker.mjs",
+    "build": "echo \"Workers built by wrangler\"",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "bs58": "^6.0.0",
+    "msgpackr": "^1.11.2"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241218.0",
+    "wrangler": "^3.78.0"
+  }
+}

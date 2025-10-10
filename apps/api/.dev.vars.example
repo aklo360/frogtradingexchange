@@ -1,0 +1,7 @@
+TITAN_TOKEN="paste-your-token-here"
+
+# Optional: if you prefer configuring the Worker with a separate vars file instead of
+# forwarding values from the repo root .env files, keep overrides here.
+# TITAN_REGION_ORDER="us1.api.demo.titan.exchange,de1.api.demo.titan.exchange"
+# TITAN_BASE_URL="https://{region}/api/v1"
+# TITAN_WS_URL="wss://{region}/api/v1/ws"
