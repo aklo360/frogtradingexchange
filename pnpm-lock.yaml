@@ -58,9 +58,6 @@ importers:
       '@cloudflare/next-on-pages':
         specifier: ^1.11.0
         version: 1.13.16(@cloudflare/workers-types@4.20251008.0)(bufferutil@4.0.9)(next@15.5.4(@babel/core@7.28.4)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(utf-8-validate@5.0.10)(wrangler@3.114.15(@cloudflare/workers-types@4.20251008.0)(bufferutil@4.0.9)(utf-8-validate@5.0.10))
-      '@cloudflare/workers-types':
-        specifier: ^4.20241218.0
-        version: 4.20251008.0
       '@eslint/eslintrc':
         specifier: ^3
         version: 3.3.1

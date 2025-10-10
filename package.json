@@ -8,7 +8,8 @@
   "scripts": {
     "dev": "pnpm -r --parallel dev",
     "build": "pnpm -r build",
-    "deploy": "pnpm --filter @frogx/api deploy && pnpm --filter @frogx/ui deploy:pages"
+    "deploy": "pnpm --filter @frogx/api deploy && pnpm --filter @frogx/ui deploy:pages",
+    "deploy:prod": "pnpm install --frozen-lockfile && pnpm --filter @frogx/api run deploy && pnpm --filter @frogx/ui run deploy:pages"
   },
   "devDependencies": {
     "dotenv": "^16.4.5"
