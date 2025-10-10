@@ -31,14 +31,17 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   async rewrites() {
-    return isDev
-      ? [
-          {
-            source: "/api/:path*",
-            destination: "http://localhost:8787/api/:path*",
-          },
-        ]
-      : [];
+    if (!isDev) return [];
+    return [
+      {
+        source: "/api/:path*",
+        destination: "http://localhost:8787/api/:path*",
+      },
+      {
+        source: "/rpc",
+        destination: "http://localhost:8787/rpc",
+      },
+    ];
   },
 };
 
