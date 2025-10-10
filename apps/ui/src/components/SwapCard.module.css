@@ -1,5 +1,6 @@
 .swapCard {
   position: relative;
+  z-index: 4;
   display: flex;
   flex-direction: column;
   gap: 1.9rem;
@@ -8,12 +9,46 @@
   padding: 2.5rem;
   border-radius: 24px;
   background: rgba(12, 6, 53, 0.88);
-  border: 3px solid #14f195;
-  box-shadow: 0 0 32px rgba(0, 0, 0, 0.45), inset 0 0 8px rgba(153, 69, 255, 0.55);
+  border: none;
+  box-shadow:
+    0 0 24px rgba(20, 241, 149, 0.35),
+    0 0 48px rgba(20, 241, 149, 0.2),
+    0 0 32px rgba(0, 0, 0, 0.45),
+    inset 0 0 8px rgba(153, 69, 255, 0.4);
+  -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   color: #eafdf4;
   font-family: var(--font-press-start), var(--font-geist-sans), system-ui,
     sans-serif;
+}
+
+/* Animated conic glow border ring */
+.swapCard::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 26px;
+  padding: 3px;
+  --angle: 0deg;
+  background: conic-gradient(from var(--angle), #00eaff 0, #14f195 50%, #00eaff 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0) border-box;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0) border-box;
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: swapcard-shift 8s linear infinite;
+  z-index: 0;
+}
+
+@property --angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes swapcard-shift {
+  to {
+    --angle: 360deg;
+  }
 }
 
 .header {

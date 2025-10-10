@@ -5,9 +5,14 @@
   justify-content: center;
   padding: 3rem 1.5rem 3rem;
   padding-top: 160px;
-  background:
-    radial-gradient(circle at top left, #14f195 0%, rgba(20, 241, 149, 0) 35%),
-    radial-gradient(circle at 70% 80%, rgba(0, 0, 0, 0.85) 0%, rgba(23, 0, 69, 0.9) 55%, rgba(12, 6, 53, 0.9) 100%);
+  background: radial-gradient(
+    circle at 70% 80%,
+    rgba(0, 0, 0, 0.88) 0%,
+    rgba(23, 0, 69, 0.9) 55%,
+    rgba(12, 6, 53, 0.92) 100%
+  );
+  isolation: isolate;
+  filter: contrast(1.02) saturate(1.04);
 }
 
 .headerBar {
@@ -56,11 +61,16 @@
   margin: 0;
 }
 
-.headerIcon {
+.headerSticker {
   height: 2.15rem;
   width: auto;
   image-rendering: pixelated;
   display: block;
+}
+
+.headerStickerLarge {
+  /* Match live: title size + tagline size + gap */
+  height: calc(1.55rem + 0.7rem + 0.65rem);
 }
 
 .rightControls {
@@ -122,6 +132,7 @@
   overflow: hidden;
   padding: 0.5rem 0;
   pointer-events: none;
+  z-index: 4;
 }
 
 .tickerTrack {
@@ -163,18 +174,60 @@
   }
 }
 
+
+.main::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: repeating-linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.03) 0px,
+    rgba(255, 255, 255, 0.03) 1px,
+    rgba(0, 0, 0, 0) 3px,
+    rgba(0, 0, 0, 0) 4px
+  );
+  animation: crt-scan 8s linear infinite;
+}
+
 .main::after {
   content: "";
   position: fixed;
   inset: 0;
-  background-image: linear-gradient(
-      rgba(255, 255, 255, 0.05) 1px,
-      transparent 1px
+  background: radial-gradient(
+      closest-corner at 50% 42%,
+      rgba(255, 255, 255, 0.02),
+      rgba(255, 255, 255, 0) 60%
     ),
-    radial-gradient(circle at 25% 20%, rgba(153, 69, 255, 0.12) 0%, rgba(153, 69, 255, 0) 55%);
-  background-size: 100% 2px, 100% 100%;
+    radial-gradient(
+      closest-side at 50% 50%,
+      rgba(0, 0, 0, 0) 65%,
+      rgba(0, 0, 0, 0.35) 100%
+    );
+  mix-blend-mode: overlay;
   opacity: 0.55;
   pointer-events: none;
+  animation: crt-flicker 1.8s ease-in-out infinite alternate;
+  z-index: 0;
+}
+
+@keyframes crt-scan {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(4px);
+  }
+}
+
+@keyframes crt-flicker {
+  0% {
+    opacity: 0.52;
+  }
+  100% {
+    opacity: 0.6;
+  }
 }
 
 @media (max-width: 768px) {
@@ -194,9 +247,15 @@
   .tagline {
     font-size: 0.6rem;
   }
+  .headerBar {
+    gap: 0.5rem;
+  }
 
-  .headerIcon {
+  .headerSticker {
     height: 1.6rem;
+  }
+  .headerStickerLarge {
+    height: calc(1.2rem + 0.6rem + 0.5rem);
   }
 
   .walletButton {

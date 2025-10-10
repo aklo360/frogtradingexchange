@@ -18,17 +18,24 @@ export default function Home() {
       <header className={styles.headerBar}>
         <div className={styles.headerInner}>
           <div className={styles.brandGroup}>
-            <img
-              src="/sbficon.png"
-              alt="Pixel frog icon"
-              className={styles.headerIcon}
+            <video
+              src="/sticker/excited.webm"
+              className={`${styles.headerSticker} ${styles.headerStickerLarge}`}
+              autoPlay
+              loop
+              muted
+              playsInline
+              aria-hidden="true"
             />
             <h1>Frog Trading Exchange</h1>
-            <img
-              src="/sbficon.png"
-              alt=""
+            <video
+              src="/sticker/wink.webm"
+              className={`${styles.headerSticker} ${styles.headerStickerLarge}`}
+              autoPlay
+              loop
+              muted
+              playsInline
               aria-hidden="true"
-              className={styles.headerIcon}
             />
           </div>
         </div>
