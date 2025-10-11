@@ -377,10 +377,83 @@
   letter-spacing: 0.08em;
   color: rgba(148, 255, 239, 0.85);
   word-break: break-word;
+  position: relative;
+  z-index: 2;
 }
 
 .swapFeedback a {
   color: #14f195;
+  text-decoration: underline;
+  pointer-events: auto;
+}
+
+/* Success toast overlay */
+.successToastOverlay {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.6);
+  display: grid;
+  place-items: center;
+  z-index: 2147483647; /* ensure above any local stacking contexts */
+  /* persistent until user closes */
+  animation: none;
+  pointer-events: all;
+  will-change: opacity;
+}
+
+.successToastVideo {
+  width: 160px;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 24px rgba(20, 241, 149, 0.35));
+}
+
+.successToastContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  text-align: center;
+  position: relative; /* anchor close icon relative to centered content */
+  padding: 1rem 1.25rem 1.25rem;
+}
+
+.successToastTitle {
+  font-family: var(--font-press-start), var(--font-geist-sans), system-ui, sans-serif;
+  font-size: 0.9rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #eafdf4;
+}
+
+.successToastLink {
+  color: #14f195;
+  text-decoration: underline;
+  font-size: 0.8rem;
+  font-family: var(--font-press-start), var(--font-geist-sans), system-ui, sans-serif;
+}
+
+.successToastCloseIcon {
+  position: absolute;
+  /* top-right corner of centered content */
+  top: 8px;
+  right: 8px;
+  width: 42px;
+  height: 42px;
+  border: 2px solid #14f195;
+  border-radius: 10px;
+  background: rgba(20, 241, 149, 0.12);
+  color: #14f195;
+  font-family: var(--font-press-start), var(--font-geist-sans), system-ui, sans-serif;
+  font-size: 1rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
 }
 
 .swapFeedbackError {

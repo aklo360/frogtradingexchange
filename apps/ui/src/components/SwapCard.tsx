@@ -2,6 +2,7 @@
 
 import { Buffer } from "buffer";
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import {
@@ -13,6 +14,7 @@ import {
   VersionedTransaction,
 } from "@solana/web3.js";
 import { useQuotePreview } from "@/lib/hooks/useQuotePreview";
+import { buildApiUrl } from "@/lib/api";
 import { toBaseUnits } from "@/lib/solana/validation";
 import styles from "./SwapCard.module.css";
 
@@ -70,13 +72,14 @@ export const SwapCard = () => {
   const [fromMint, setFromMint] = useState(DEMO_TOKENS[0]);
   const [toMint, setToMint] = useState(DEMO_TOKENS[1]);
   const [amountIn, setAmountIn] = useState("0");
-  const [solBalanceLamports, setSolBalanceLamports] = useState<number | null>(
-    null,
-  );
+  // Balance of the currently selected pay token (display units, e.g., SOL/USDC)
+  const [payBalance, setPayBalance] = useState<number | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
   const [isSwapping, setIsSwapping] = useState(false);
   const [swapError, setSwapError] = useState<string | null>(null);
   const [lastSignature, setLastSignature] = useState<string | null>(null);
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
+  const isBrowser = typeof window !== "undefined";
 
   const { connection } = useConnection();
   const { connected, publicKey, disconnect, disconnecting, sendTransaction } =
@@ -110,24 +113,40 @@ export const SwapCard = () => {
     let cancelled = false;
 
     if (!walletConnected || !publicKey) {
-      setSolBalanceLamports(null);
+      setPayBalance(null);
       return;
     }
 
     const refreshBalance = async () => {
       try {
         setBalanceLoading(true);
-        const lamports = await connection.getBalance(publicKey, {
-          commitment: "processed",
-        });
-        if (!cancelled) {
-          setSolBalanceLamports(lamports);
+        // SOL uses native balance; SPL tokens use parsed token accounts by mint
+        if (fromMint.mint === DEMO_TOKENS[0].mint) {
+          const lamports = await connection.getBalance(publicKey, {
+            commitment: "processed",
+          });
+          if (!cancelled) {
+            setPayBalance(lamports / LAMPORTS_PER_SOL);
+          }
+        } else {
+          const mintKey = new PublicKey(fromMint.mint);
+          const parsed = await connection.getParsedTokenAccountsByOwner(
+            publicKey,
+            { mint: mintKey },
+            "processed",
+          );
+          const total = parsed.value.reduce((sum, acc) => {
+            const info: any = (acc.account.data as any).parsed?.info;
+            const amt = Number(info?.tokenAmount?.uiAmount ?? 0);
+            return sum + (Number.isFinite(amt) ? amt : 0);
+          }, 0);
+          if (!cancelled) {
+            setPayBalance(total);
+          }
         }
       } catch (error) {
-        if (!cancelled) {
-          setSolBalanceLamports(0);
-        }
-        console.error("Failed to load SOL balance", error);
+        if (!cancelled) setPayBalance(0);
+        console.error("Failed to load token balance", error);
       } finally {
         if (!cancelled) {
           setBalanceLoading(false);
@@ -140,7 +159,16 @@ export const SwapCard = () => {
     return () => {
       cancelled = true;
     };
-  }, [connection, publicKey, walletConnected]);
+  }, [connection, publicKey, walletConnected, fromMint]);
+
+  // Auto-dismiss benign wallet errors like "user rejected the request"
+  useEffect(() => {
+    if (!swapError) return;
+    const normalized = swapError.toLowerCase();
+    if (!normalized.includes("user rejected")) return;
+    const timer = setTimeout(() => setSwapError(null), 5000);
+    return () => clearTimeout(timer);
+  }, [swapError]);
 
   const amountOutValue = useMemo(() => {
     if (!quoteData) return 0;
@@ -182,6 +210,66 @@ export const SwapCard = () => {
     walletConnected && amountOutValue > 0
       ? formatNumber(amountOutValue, 6)
       : "0.000000";
+
+  // USDC estimate of the output amount using Titan quotes
+  const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+  const [usdcEstimate, setUsdcEstimate] = useState<number | null>(null);
+  const [usdcEstimateLoading, setUsdcEstimateLoading] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    if (!walletConnected || !publicKeyBase58 || !quoteData) {
+      setUsdcEstimate(null);
+      return () => controller.abort();
+    }
+    const outTokens = amountOutValue;
+    if (!outTokens || outTokens <= 0) {
+      setUsdcEstimate(null);
+      return () => controller.abort();
+    }
+    if (toMint.mint === USDC_MINT) {
+      setUsdcEstimate(outTokens);
+      return () => controller.abort();
+    }
+    const fetchEstimate = async () => {
+      try {
+        setUsdcEstimateLoading(true);
+        const res = await fetch(buildApiUrl("/api/frogx/quotes"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            inMint: toMint.mint,
+            outMint: USDC_MINT,
+            amountIn: toBaseUnits(outTokens, toMint.decimals),
+            slippageBps: 0,
+            priorityFee: 0,
+            userPublicKey: publicKeyBase58,
+          }),
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const data = (await res.json()) as { amountOut?: string };
+        const outRaw = Number(data?.amountOut ?? 0);
+        const usdc = Number.isFinite(outRaw) ? outRaw / 10 ** 6 : 0;
+        setUsdcEstimate(usdc > 0 ? usdc : 0);
+      } catch (error) {
+        if ((error as Error).name !== "AbortError") {
+          setUsdcEstimate(null);
+        }
+      } finally {
+        setUsdcEstimateLoading(false);
+      }
+    };
+    fetchEstimate();
+    return () => controller.abort();
+  }, [walletConnected, publicKeyBase58, quoteData?.routeId, amountOutValue, toMint.mint, toMint.decimals]);
+
+  const formattedUsdcEstimate =
+    usdcEstimate !== null && usdcEstimate > 0
+      ? formatNumber(usdcEstimate, 2)
+      : usdcEstimateLoading
+        ? "…"
+        : "—";
 
   const minReceivedLabel =
     walletConnected && minReceived > 0
@@ -273,16 +361,14 @@ export const SwapCard = () => {
     }
   };
 
-  const solBalance = solBalanceLamports !== null ? solBalanceLamports / LAMPORTS_PER_SOL : 0;
   const balanceLabel = walletConnected
     ? balanceLoading
       ? "…"
-      : formatNumber(solBalance, 4)
+      : formatNumber(payBalance ?? 0, 6)
     : "—";
 
-  const isSolSelected = fromMint.mint === DEMO_TOKENS[0].mint;
-  const canUseBalanceShortcuts = walletConnected && isSolSelected && solBalanceLamports !== null;
-  const displayedBalance = isSolSelected ? balanceLabel : "—";
+  const canUseBalanceShortcuts = walletConnected && payBalance !== null;
+  const displayedBalance = balanceLabel;
 
   const toInputAmount = (value: number) => {
     const fixed = value.toFixed(6);
@@ -291,9 +377,8 @@ export const SwapCard = () => {
 
   const handleBalanceShortcut = (ratio: number) => {
     if (!canUseBalanceShortcuts) return;
-    const target = (solBalanceLamports ?? 0) * ratio;
-    const amountInSol = target / LAMPORTS_PER_SOL;
-    setAmountIn(amountInSol > 0 ? toInputAmount(amountInSol) : "0");
+    const target = (payBalance ?? 0) * ratio;
+    setAmountIn(target > 0 ? toInputAmount(target) : "0");
   };
 
   useEffect(() => {
@@ -363,6 +448,8 @@ export const SwapCard = () => {
       }
 
       setLastSignature(signature);
+      // Success toast overlay with money sticker; stays until user closes
+      setShowSuccessToast(true);
     } catch (error) {
       console.error("Swap failed", error);
       setSwapError((error as Error).message ?? "Swap failed");
@@ -398,6 +485,50 @@ export const SwapCard = () => {
 
   return (
     <div className={styles.swapCard}>
+      {showSuccessToast && isBrowser &&
+        createPortal(
+          <div
+            className={styles.successToastOverlay}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="swap-success-title"
+          >
+            <div className={styles.successToastContent}>
+              <button
+                type="button"
+                className={styles.successToastCloseIcon}
+                onClick={() => setShowSuccessToast(false)}
+                aria-label="Close success message"
+                title="Close"
+              >
+                ×
+              </button>
+              <video
+                className={styles.successToastVideo}
+                src="/sticker/money.webm"
+                autoPlay
+                loop
+                muted
+                playsInline
+              />
+              <h3 id="swap-success-title" className={styles.successToastTitle}>
+                Swap Successful!
+              </h3>
+              {lastSignature && (
+                <a
+                  className={styles.successToastLink}
+                  href={`https://solscan.io/tx/${lastSignature}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={lastSignature}
+                >
+                  View on Solscan
+                </a>
+              )}
+            </div>
+          </div>,
+          document.body,
+        )}
       <header className={styles.header}>
         <div>
           <span className={styles.badge}>Swap</span>
@@ -545,7 +676,7 @@ export const SwapCard = () => {
           <div className={styles.rowHeader}>
             <span className={styles.rowLabel}>You Receive</span>
             <span className={styles.estimateTag}>
-              ≈ {formattedAmountOut} {toMint.label}
+              ≈ {formattedUsdcEstimate} USDC
             </span>
           </div>
 
@@ -618,19 +749,7 @@ export const SwapCard = () => {
       {swapError && (
         <p className={styles.swapFeedbackError}>{swapError}</p>
       )}
-      {lastSignature && !swapError && (
-        <p className={styles.swapFeedback}>
-          Swap sent:
-          {" "}
-          <a
-            href={`https://solscan.io/tx/${lastSignature}`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            {lastSignature}
-          </a>
-        </p>
-      )}
+      {/* Success message now shown in the toast overlay only */}
     </div>
   );
 };

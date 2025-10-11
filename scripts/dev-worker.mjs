@@ -55,15 +55,22 @@ for (const [key, value] of Object.entries(process.env)) {
 
 const port = process.env.WORKER_PORT ?? "8787";
 
-const child = spawn(
-  "wrangler",
-  ["dev", "--port", port, ...varArgs],
-  {
-    cwd: workerDir,
-    stdio: "inherit",
-    env: process.env,
-  },
-);
+const useRemote =
+  process.env.WRANGLER_DEV_REMOTE === "1" ||
+  process.env.WORKER_REMOTE === "1" ||
+  process.env.DEV_WORKER_REMOTE === "1";
+
+const wranglerArgs = ["dev", "--port", port, ...varArgs];
+if (useRemote) {
+  wranglerArgs.push("--remote");
+  console.log("[dev-worker] Using Cloudflare remote dev for Worker (WS-friendly)…");
+}
+
+const child = spawn("wrangler", wranglerArgs, {
+  cwd: workerDir,
+  stdio: "inherit",
+  env: process.env,
+});
 
 const signals = ["SIGINT", "SIGTERM", "SIGQUIT"];
 for (const signal of signals) {
