@@ -315,9 +315,29 @@
 }
 
 .summaryGrid {
-  display: grid;
-  gap: 1rem;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1.25rem;
+  width: 100%;
+}
+
+/* Stretch 3 columns left / center / right */
+.summaryItem {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.summaryItem:nth-child(1) {
+  text-align: left;
+}
+
+.summaryItem:nth-child(2) {
+  text-align: center;
+}
+
+.summaryItem:nth-child(3) {
+  text-align: right;
 }
 
 .summaryItem {

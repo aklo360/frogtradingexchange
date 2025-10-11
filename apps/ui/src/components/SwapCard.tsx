@@ -271,6 +271,50 @@ export const SwapCard = () => {
         ? "…"
         : "—";
 
+  // Price of 1 SOL in USDC (via Titan)
+  const SOL_MINT = "So11111111111111111111111111111111111111112";
+  const [solUsdcPrice, setSolUsdcPrice] = useState<number | null>(null);
+  const [solPriceLoading, setSolPriceLoading] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    if (!walletConnected || !publicKeyBase58) {
+      setSolUsdcPrice(null);
+      return () => controller.abort();
+    }
+    const fetchSolPrice = async () => {
+      try {
+        setSolPriceLoading(true);
+        const res = await fetch(buildApiUrl("/api/frogx/quotes"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            inMint: SOL_MINT,
+            outMint: USDC_MINT,
+            amountIn: toBaseUnits(1, 9),
+            slippageBps: 0,
+            priorityFee: 0,
+            userPublicKey: publicKeyBase58,
+          }),
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const data = (await res.json()) as { amountOut?: string };
+        const outRaw = Number(data?.amountOut ?? 0);
+        const price = Number.isFinite(outRaw) ? outRaw / 10 ** 6 : 0;
+        setSolUsdcPrice(price > 0 ? price : 0);
+      } catch (error) {
+        if ((error as Error).name !== "AbortError") {
+          setSolUsdcPrice(null);
+        }
+      } finally {
+        setSolPriceLoading(false);
+      }
+    };
+    fetchSolPrice();
+    return () => controller.abort();
+  }, [walletConnected, publicKeyBase58]);
+
   const minReceivedLabel =
     walletConnected && minReceived > 0
       ? `${formatNumber(minReceived, 6)} ${toMint.label}`
@@ -676,7 +720,11 @@ export const SwapCard = () => {
           <div className={styles.rowHeader}>
             <span className={styles.rowLabel}>You Receive</span>
             <span className={styles.estimateTag}>
-              ≈ {formattedUsdcEstimate} USDC
+              {usdcEstimate !== null && usdcEstimate > 0
+                ? `$${formattedUsdcEstimate}`
+                : usdcEstimateLoading
+                  ? "…"
+                  : "—"}
             </span>
           </div>
 
@@ -733,6 +781,16 @@ export const SwapCard = () => {
             <div className={styles.summaryItem}>
               <span className={styles.summaryLabel}>Min Received</span>
               <span className={styles.summaryValue}>{minReceivedLabel}</span>
+            </div>
+            <div className={styles.summaryItem}>
+              <span className={styles.summaryLabel}>1 SOL</span>
+              <span className={styles.summaryValue}>
+                {solUsdcPrice !== null && solUsdcPrice > 0
+                  ? `$${formatNumber(solUsdcPrice, 2)}`
+                  : solPriceLoading
+                    ? "…"
+                    : "—"}
+              </span>
             </div>
           </div>
         </section>
