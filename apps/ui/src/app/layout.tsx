@@ -25,9 +25,13 @@ export const metadata: Metadata = {
   description:
     "Titan-powered Solana swap terminal with retro SNES frog theming.",
   icons: {
-    icon: "/sbficon.png",
-    shortcut: "/sbficon.png",
-    apple: "/sbficon.png",
+    // Prefer real .ico in root with PNG fallbacks
+    icon: [
+      { url: "/favicon.ico", rel: "icon", sizes: "any" },
+      { url: "/favicon.png", rel: "icon", type: "image/png" },
+    ],
+    shortcut: "/favicon.ico",
+    apple: "/favicon.png",
   },
 };
 
