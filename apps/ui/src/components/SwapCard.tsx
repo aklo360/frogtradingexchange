@@ -81,6 +81,18 @@ export const SwapCard = () => {
   const [showSuccessToast, setShowSuccessToast] = useState(false);
   const isBrowser = typeof window !== "undefined";
 
+  const extractUiAmount = (data: unknown): number => {
+    if (typeof data !== "object" || data === null) return 0;
+    const maybeParsed = (data as Record<string, unknown>)["parsed"];
+    if (typeof maybeParsed !== "object" || maybeParsed === null) return 0;
+    const info = (maybeParsed as Record<string, unknown>)["info"];
+    if (typeof info !== "object" || info === null) return 0;
+    const tokenAmount = (info as Record<string, unknown>)["tokenAmount"];
+    if (typeof tokenAmount !== "object" || tokenAmount === null) return 0;
+    const uiAmount = (tokenAmount as Record<string, unknown>)["uiAmount"];
+    return typeof uiAmount === "number" && Number.isFinite(uiAmount) ? uiAmount : 0;
+  };
+
   const { connection } = useConnection();
   const { connected, publicKey, disconnect, disconnecting, sendTransaction } =
     useWallet();
@@ -136,8 +148,7 @@ export const SwapCard = () => {
             "processed",
           );
           const total = parsed.value.reduce((sum, acc) => {
-            const info: any = (acc.account.data as any).parsed?.info;
-            const amt = Number(info?.tokenAmount?.uiAmount ?? 0);
+            const amt = extractUiAmount(acc.account.data as unknown);
             return sum + (Number.isFinite(amt) ? amt : 0);
           }, 0);
           if (!cancelled) {
@@ -186,24 +197,7 @@ export const SwapCard = () => {
       ? "Failed to load"
       : "Streaming…";
 
-  const priceImpactLabel = quoteData
-    ? `${(quoteData.priceImpactBps / 100).toFixed(2)}%`
-    : "—";
-
-  const quoteStatusLabel = (() => {
-    if (!walletConnected) {
-      return "Connect a wallet to start streaming quotes.";
-    }
-    if (quoteState.status === "loading") return "Refreshing quote…";
-    if (quoteState.status === "error") {
-      const message = quoteState.error ?? "Unknown";
-      return `Error: ${message}`;
-    }
-    if (quoteData) {
-      return quoteData.executable ? "Quote ready" : "Quote stale";
-    }
-    return "Awaiting input";
-  })();
+  // priceImpactLabel and quoteStatusLabel omitted from UI for now to reduce noise
 
 
   const formattedAmountOut =
@@ -262,7 +256,7 @@ export const SwapCard = () => {
     };
     fetchEstimate();
     return () => controller.abort();
-  }, [walletConnected, publicKeyBase58, quoteData?.routeId, amountOutValue, toMint.mint, toMint.decimals]);
+  }, [walletConnected, publicKeyBase58, quoteData, amountOutValue, toMint.mint, toMint.decimals]);
 
   const formattedUsdcEstimate =
     usdcEstimate !== null && usdcEstimate > 0
@@ -320,10 +314,7 @@ export const SwapCard = () => {
       ? `${formatNumber(minReceived, 6)} ${toMint.label}`
       : "—";
 
-  const pricePerInLabel =
-    walletConnected && pricePerIn > 0
-      ? `${formatNumber(pricePerIn, 6)} ${toMint.label}`
-      : "—";
+  // price per input omitted from UI for now
 
   const decodeBase64ToUint8Array = (value: string) => {
     if (typeof atob === "function") {
