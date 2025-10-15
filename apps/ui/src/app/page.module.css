@@ -32,7 +32,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: min(960px, calc(100% - 160px));
+  width: 100%;
+  max-width: 960px;
+  padding: 0 80px;
   min-height: 2.6rem;
 }
 
@@ -50,6 +52,27 @@
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: #14f195;
+  margin: 0;
+  line-height: 1;
+}
+
+.brandLogo {
+  display: block;
+  height: 2.1rem;
+  width: auto;
+  image-rendering: pixelated;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .tagline {
@@ -138,7 +161,7 @@
 .tickerTrack {
   display: inline-flex;
   white-space: nowrap;
-  animation: ticker-scroll 18s linear infinite;
+  animation: ticker-scroll 28s linear infinite;
   font-family: var(--font-press-start), var(--font-geist-sans), system-ui,
     sans-serif;
   text-transform: uppercase;

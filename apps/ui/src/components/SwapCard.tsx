@@ -16,13 +16,13 @@ import {
 import { useQuotePreview } from "@/lib/hooks/useQuotePreview";
 import { buildApiUrl } from "@/lib/api";
 import { toBaseUnits } from "@/lib/solana/validation";
+import type { TokenOption } from "@/lib/tokens";
+import {
+  DEFAULT_TOKEN_OPTIONS,
+  WRAPPED_SOL_MINT,
+} from "@/lib/tokens";
+import { TokenSelector } from "./TokenSelector";
 import styles from "./SwapCard.module.css";
-
-type TokenOption = {
-  label: string;
-  mint: string;
-  decimals: number;
-};
 
 type QuoteInstructionAccount = {
   pubkey: string;
@@ -36,29 +36,8 @@ type QuoteInstruction = {
   data: string;
 };
 
-const DEMO_TOKENS: TokenOption[] = [
-  {
-    label: "SOL",
-    mint: "So11111111111111111111111111111111111111112",
-    decimals: 9,
-  },
-  {
-    label: "USDC",
-    mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-    decimals: 6,
-  },
-  {
-    label: "FROG",
-    mint: "Fr0g1111111111111111111111111111111111111111",
-    decimals: 6,
-  },
-];
-
 const DEFAULT_SLIPPAGE_BPS = 50;
 const DEFAULT_PRIORITY_FEE = 0;
-
-const formatMint = (mint: string) =>
-  `${mint.slice(0, 4)}…${mint.slice(mint.length - 4)}`;
 
 const formatNumber = (value: number, maximumFractionDigits = 6) =>
   Number.isFinite(value)
@@ -69,8 +48,12 @@ const formatNumber = (value: number, maximumFractionDigits = 6) =>
     : "—";
 
 export const SwapCard = () => {
-  const [fromMint, setFromMint] = useState(DEMO_TOKENS[0]);
-  const [toMint, setToMint] = useState(DEMO_TOKENS[1]);
+  const [fromToken, setFromToken] = useState<TokenOption>(
+    DEFAULT_TOKEN_OPTIONS[0],
+  );
+  const [toToken, setToToken] = useState<TokenOption>(
+    DEFAULT_TOKEN_OPTIONS[1],
+  );
   const [amountIn, setAmountIn] = useState("0");
   // Balance of the currently selected pay token (display units, e.g., SOL/USDC)
   const [payBalance, setPayBalance] = useState<number | null>(null);
@@ -106,12 +89,12 @@ export const SwapCard = () => {
 
   const amountInBaseUnits =
     sanitizedAmount > 0
-      ? toBaseUnits(sanitizedAmount, fromMint.decimals)
+      ? toBaseUnits(sanitizedAmount, fromToken.decimals)
       : "0";
 
   const quoteState = useQuotePreview({
-    inMint: fromMint.mint,
-    outMint: toMint.mint,
+    inMint: fromToken.mint,
+    outMint: toToken.mint,
     amountIn: amountInBaseUnits,
     slippageBps: DEFAULT_SLIPPAGE_BPS,
     priorityFee: DEFAULT_PRIORITY_FEE,
@@ -133,7 +116,7 @@ export const SwapCard = () => {
       try {
         setBalanceLoading(true);
         // SOL uses native balance; SPL tokens use parsed token accounts by mint
-        if (fromMint.mint === DEMO_TOKENS[0].mint) {
+        if (fromToken.mint === WRAPPED_SOL_MINT) {
           const lamports = await connection.getBalance(publicKey, {
             commitment: "processed",
           });
@@ -141,7 +124,7 @@ export const SwapCard = () => {
             setPayBalance(lamports / LAMPORTS_PER_SOL);
           }
         } else {
-          const mintKey = new PublicKey(fromMint.mint);
+          const mintKey = new PublicKey(fromToken.mint);
           const parsed = await connection.getParsedTokenAccountsByOwner(
             publicKey,
             { mint: mintKey },
@@ -170,7 +153,7 @@ export const SwapCard = () => {
     return () => {
       cancelled = true;
     };
-  }, [connection, publicKey, walletConnected, fromMint]);
+  }, [connection, publicKey, walletConnected, fromToken]);
 
   // Auto-dismiss benign wallet errors like "user rejected the request"
   useEffect(() => {
@@ -184,12 +167,11 @@ export const SwapCard = () => {
   const amountOutValue = useMemo(() => {
     if (!quoteData) return 0;
     const numeric = Number(quoteData.amountOut);
-    const divisor = 10 ** toMint.decimals;
+    const divisor = 10 ** toToken.decimals;
     return Number.isFinite(numeric) ? numeric / divisor : 0;
-  }, [quoteData, toMint.decimals]);
+  }, [quoteData, toToken.decimals]);
 
   const minReceived = amountOutValue * (1 - DEFAULT_SLIPPAGE_BPS / 10_000);
-  const pricePerIn = sanitizedAmount > 0 ? amountOutValue / sanitizedAmount : 0;
 
   const routersLabel = quoteData
     ? quoteData.routers.join(" → ")
@@ -221,7 +203,7 @@ export const SwapCard = () => {
       setUsdcEstimate(null);
       return () => controller.abort();
     }
-    if (toMint.mint === USDC_MINT) {
+    if (toToken.mint === USDC_MINT) {
       setUsdcEstimate(outTokens);
       return () => controller.abort();
     }
@@ -232,9 +214,9 @@ export const SwapCard = () => {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            inMint: toMint.mint,
+            inMint: toToken.mint,
             outMint: USDC_MINT,
-            amountIn: toBaseUnits(outTokens, toMint.decimals),
+            amountIn: toBaseUnits(outTokens, toToken.decimals),
             slippageBps: 0,
             priorityFee: 0,
             userPublicKey: publicKeyBase58,
@@ -256,7 +238,7 @@ export const SwapCard = () => {
     };
     fetchEstimate();
     return () => controller.abort();
-  }, [walletConnected, publicKeyBase58, quoteData, amountOutValue, toMint.mint, toMint.decimals]);
+  }, [walletConnected, publicKeyBase58, quoteData, amountOutValue, toToken.mint, toToken.decimals]);
 
   const formattedUsdcEstimate =
     usdcEstimate !== null && usdcEstimate > 0
@@ -266,7 +248,6 @@ export const SwapCard = () => {
         : "—";
 
   // Price of 1 SOL in USDC (via Titan)
-  const SOL_MINT = "So11111111111111111111111111111111111111112";
   const [solUsdcPrice, setSolUsdcPrice] = useState<number | null>(null);
   const [solPriceLoading, setSolPriceLoading] = useState(false);
 
@@ -283,7 +264,7 @@ export const SwapCard = () => {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            inMint: SOL_MINT,
+            inMint: WRAPPED_SOL_MINT,
             outMint: USDC_MINT,
             amountIn: toBaseUnits(1, 9),
             slippageBps: 0,
@@ -311,7 +292,7 @@ export const SwapCard = () => {
 
   const minReceivedLabel =
     walletConnected && minReceived > 0
-      ? `${formatNumber(minReceived, 6)} ${toMint.label}`
+      ? `${formatNumber(minReceived, 6)} ${toToken.symbol}`
       : "—";
 
   // price per input omitted from UI for now
@@ -386,8 +367,32 @@ export const SwapCard = () => {
   };
 
   const handleSwitchTokens = () => {
-    setFromMint(toMint);
-    setToMint(fromMint);
+    setFromToken(toToken);
+    setToToken(fromToken);
+  };
+
+  const handleSelectFromToken = (token: TokenOption) => {
+    if (token.mint === fromToken.mint) {
+      setFromToken(token);
+      return;
+    }
+    const previousFrom = fromToken;
+    setFromToken(token);
+    if (token.mint === toToken.mint) {
+      setToToken(previousFrom);
+    }
+  };
+
+  const handleSelectToToken = (token: TokenOption) => {
+    if (token.mint === toToken.mint) {
+      setToToken(token);
+      return;
+    }
+    const previousTo = toToken;
+    setToToken(token);
+    if (token.mint === fromToken.mint) {
+      setFromToken(previousTo);
+    }
   };
 
   const handleAmountChange = (value: string) => {
@@ -588,7 +593,7 @@ export const SwapCard = () => {
             <span className={styles.rowLabel}>You Pay</span>
             <div className={styles.balanceGroup}>
               <span className={styles.balanceLabel}>
-                Balance: {displayedBalance} {fromMint.label}
+                Balance: {displayedBalance} {fromToken.symbol}
               </span>
               {canUseBalanceShortcuts && (
                 <div className={styles.balanceShortcuts}>
@@ -613,38 +618,13 @@ export const SwapCard = () => {
 
           <div className={styles.tokenControls}>
             <div className={styles.tokenSelectGroup}>
-              <label className={styles.srOnly} htmlFor="fromMint">
-                Select token to pay
-              </label>
-              <select
-                id="fromMint"
-                className={styles.tokenSelect}
-                value={fromMint.mint}
-                onChange={(event) => {
-                  const next = DEMO_TOKENS.find(
-                    (token) => token.mint === event.target.value,
-                  );
-                  if (!next) return;
-
-                  setFromMint(next);
-
-                  if (next.mint === toMint.mint) {
-                    const fallback = DEMO_TOKENS.find(
-                      (token) => token.mint !== next.mint,
-                    );
-                    if (fallback) {
-                      setToMint(fallback);
-                    }
-                  }
-                }}
-              >
-                {DEMO_TOKENS.map((token) => (
-                  <option key={token.mint} value={token.mint}>
-                    {token.label}
-                  </option>
-                ))}
-              </select>
-              <span className={styles.mintHint}>{formatMint(fromMint.mint)}</span>
+              <TokenSelector
+                id="fromToken"
+                label="Select token to pay"
+                selectedToken={fromToken}
+                onSelect={handleSelectFromToken}
+                disallowMint={toToken.mint}
+              />
             </div>
 
             <div className={styles.amountGroup}>
@@ -721,29 +701,13 @@ export const SwapCard = () => {
 
           <div className={styles.tokenControls}>
             <div className={styles.tokenSelectGroup}>
-              <label className={styles.srOnly} htmlFor="toMint">
-                Select token to receive
-              </label>
-              <select
-                id="toMint"
-                className={styles.tokenSelect}
-                value={toMint.mint}
-                onChange={(event) => {
-                  const next = DEMO_TOKENS.find(
-                    (token) => token.mint === event.target.value,
-                  );
-                  if (next && next.mint !== fromMint.mint) {
-                    setToMint(next);
-                  }
-                }}
-              >
-                {DEMO_TOKENS.map((token) => (
-                  <option key={token.mint} value={token.mint}>
-                    {token.label}
-                  </option>
-                ))}
-              </select>
-              <span className={styles.mintHint}>{formatMint(toMint.mint)}</span>
+              <TokenSelector
+                id="toToken"
+                label="Select token to receive"
+                selectedToken={toToken}
+                onSelect={handleSelectToToken}
+                disallowMint={fromToken.mint}
+              />
             </div>
 
             <div className={styles.amountGroup}>

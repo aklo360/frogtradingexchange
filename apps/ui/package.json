@@ -25,6 +25,7 @@
     "react-dom": "19.1.0"
   },
   "devDependencies": {
+    "@cloudflare/next-on-pages": "^1.11.0",
     "@eslint/eslintrc": "^3",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
@@ -33,11 +34,10 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^4.3.4",
-    "@cloudflare/next-on-pages": "^1.11.0",
+    "dotenv": "^16.4.5",
     "eslint": "^9",
     "eslint-config-next": "15.5.4",
     "jsdom": "^26.0.0",
-    "dotenv": "^16.4.5",
     "pino-pretty": "^11.2.2",
     "tsx": "^4.19.2",
     "typescript": "^5",

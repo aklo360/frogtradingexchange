@@ -7,6 +7,7 @@ import { BackgroundAudio } from "@/components/BackgroundAudio";
 import { SpeakerToggle } from "@/components/SpeakerToggle";
 import { HelpButton } from "@/components/HelpButton";
 import { ChatButton } from "@/components/ChatButton";
+import { Ticker } from "@/components/Ticker";
 import styles from "./page.module.css";
 
 export default function Home() {
@@ -27,7 +28,15 @@ export default function Home() {
               playsInline
               aria-hidden="true"
             />
-            <h1>Frog Trading Exchange</h1>
+            <h1>
+              <span className={styles.srOnly}>Frog Trading Exchange</span>
+              <img
+                src="/logo.png"
+                alt="Frog Trading Exchange"
+                className={styles.brandLogo}
+                loading="lazy"
+              />
+            </h1>
             <video
               src="/sticker/wink.webm"
               className={`${styles.headerSticker} ${styles.headerStickerLarge}`}
@@ -44,30 +53,7 @@ export default function Home() {
         </div>
         <p className={styles.tagline}>Powered by Titan for the best prices on Solana.</p>
       </header>
-      <div className={styles.tickerBar} aria-label="Top Solana memecoins">
-        <div className={styles.tickerTrack}>
-          <div className={styles.tickerContent}>
-            <span className={`${styles.tickerItem} ${styles.tickerPositive}`}>BONK +5.2%</span>
-            <span className={`${styles.tickerItem} ${styles.tickerNegative}`}>SLERF −2.1%</span>
-            <span className={`${styles.tickerItem} ${styles.tickerPositive}`}>WIF +8.7%</span>
-            <span className={`${styles.tickerItem} ${styles.tickerPositive}`}>FROG +12.4%</span>
-            <span className={`${styles.tickerItem} ${styles.tickerNegative}`}>MEW −1.3%</span>
-            <span className={`${styles.tickerItem} ${styles.tickerPositive}`}>SAMO +4.9%</span>
-            <span className={`${styles.tickerItem} ${styles.tickerPositive}`}>TURBO +3.1%</span>
-            <span className={`${styles.tickerItem} ${styles.tickerPositive}`}>PONK +6.5%</span>
-          </div>
-          <div className={styles.tickerContent} aria-hidden="true">
-            <span className={`${styles.tickerItem} ${styles.tickerPositive}`}>BONK +5.2%</span>
-            <span className={`${styles.tickerItem} ${styles.tickerNegative}`}>SLERF −2.1%</span>
-            <span className={`${styles.tickerItem} ${styles.tickerPositive}`}>WIF +8.7%</span>
-            <span className={`${styles.tickerItem} ${styles.tickerPositive}`}>FROG +12.4%</span>
-            <span className={`${styles.tickerItem} ${styles.tickerNegative}`}>MEW −1.3%</span>
-            <span className={`${styles.tickerItem} ${styles.tickerPositive}`}>SAMO +4.9%</span>
-            <span className={`${styles.tickerItem} ${styles.tickerPositive}`}>TURBO +3.1%</span>
-            <span className={`${styles.tickerItem} ${styles.tickerPositive}`}>PONK +6.5%</span>
-          </div>
-        </div>
-      </div>
+      <Ticker />
       <SwapCard />
       <SpeakerToggle muted={muted} onToggle={setMuted} />
       <HelpButton />
