@@ -22,8 +22,8 @@
   width: 100%;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 0.65rem;
+  align-items: flex-start;
+  gap: 0.5rem;
   z-index: 6;
 }
 
@@ -31,24 +31,24 @@
   position: relative;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   width: 100%;
   max-width: 960px;
-  padding: 0 80px;
+  padding: 0 2.75rem;
   min-height: 2.6rem;
 }
 
 .brandGroup {
   display: flex;
   align-items: center;
-  gap: 0.95rem;
-  margin: 0 auto;
+  gap: 0.6rem;
+  margin: 0;
 }
 
 .brandGroup h1 {
   font-family: var(--font-press-start), var(--font-geist-sans), system-ui,
     sans-serif;
-  font-size: 1.55rem;
+  font-size: 1.18rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: #14f195;
@@ -58,7 +58,7 @@
 
 .brandLogo {
   display: block;
-  height: 2.1rem;
+  height: 1.45rem;
   width: auto;
   image-rendering: pixelated;
 }
@@ -103,7 +103,6 @@
   transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
-  gap: 10px;
 }
 
 .speakerButton {
@@ -147,9 +146,133 @@
   opacity: 0.65;
 }
 
+
+.menuButton {
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  border: 2px solid #14f195;
+  border-radius: 12px;
+  background: transparent;
+  color: #14f195;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+  gap: 5px;
+  flex-direction: column;
+  cursor: pointer;
+  transition: transform 150ms ease, box-shadow 150ms ease;
+  box-shadow: 0 0 18px rgba(20, 241, 149, 0.35);
+}
+
+.menuButton span {
+  display: block;
+  width: 100%;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.menuButton:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 26px rgba(20, 241, 149, 0.35);
+}
+
+.menuButton:focus-visible {
+  outline: 2px dashed rgba(20, 241, 149, 0.7);
+  outline-offset: 2px;
+}
+
+.menuSheet {
+  position: absolute;
+  top: 88px;
+  right: 32px;
+  width: 220px;
+  padding: 1.2rem 1.3rem;
+  border-radius: 16px;
+  background: rgba(8, 2, 30, 0.95);
+  border: 1px solid rgba(153, 69, 255, 0.35);
+  box-shadow: 0 18px 40px rgba(20, 241, 149, 0.25);
+  backdrop-filter: blur(12px);
+  opacity: 0;
+  transform: translateY(-12px) scale(0.96);
+  pointer-events: none;
+  transition: opacity 180ms ease, transform 180ms ease;
+  z-index: 7;
+}
+
+.menuSheetOpen {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.menuList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.menuWalletWrapper {
+  width: 100%;
+}
+
+.menuWallet {
+  width: 100%;
+  border-radius: 12px;
+  border: 2px solid #14f195;
+  background: rgba(20, 241, 149, 0.2);
+  color: #14f195;
+  font-family: var(--font-press-start), var(--font-geist-sans), system-ui,
+    sans-serif;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  padding: 0.6rem 0.75rem;
+  text-transform: uppercase;
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid rgba(20, 241, 149, 0.35);
+  background: rgba(8, 2, 30, 0.72);
+  color: rgba(234, 253, 244, 0.85);
+  font-family: var(--font-press-start), var(--font-geist-sans), system-ui,
+    sans-serif;
+  font-size: 0.55rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.menuItem:hover {
+  border-color: rgba(20, 241, 149, 0.8);
+  background: rgba(20, 241, 149, 0.18);
+}
+
+.menuIcon {
+  width: 18px;
+  height: 18px;
+  image-rendering: pixelated;
+}
+
+.menuBackdrop {
+  position: fixed;
+  inset: 0;
+  border: none;
+  background: transparent;
+  cursor: default;
+  z-index: 5;
+}
+
 .tickerBar {
   position: fixed;
-  top: 112px;
+  top: 104px;
   left: 0;
   width: 100%;
   overflow: hidden;
@@ -255,40 +378,60 @@
 
 @media (max-width: 768px) {
   .main {
-    padding: 2.5rem 1rem 2.5rem;
-    padding-top: 140px;
+    padding: 2.35rem 1rem 2.6rem;
+    padding-top: 108px;
   }
 
   .headerInner {
-    width: min(960px, calc(100% - 96px));
+    padding: 0 1.1rem;
   }
 
-  .brandGroup h1 {
-    font-size: 1.2rem;
+  .brandGroup {
+    gap: 0.55rem;
   }
 
-  .tagline {
-    font-size: 0.6rem;
-  }
-  .headerBar {
-    gap: 0.5rem;
+  .brandLogo {
+    height: 1.1rem;
   }
 
-  .headerSticker {
-    height: 1.6rem;
-  }
+  .headerSticker,
   .headerStickerLarge {
-    height: calc(1.2rem + 0.6rem + 0.5rem);
+    display: block;
+    height: 1.65rem;
   }
 
-  .walletButton {
-    min-width: 9rem;
-    font-size: 0.5rem;
-    padding: 0.4rem 0.85rem;
+  .rightControls {
+    right: 16px;
+  }
+
+  .menuButton {
+    width: 34px;
+    height: 34px;
+    padding: 5px;
+  }
+
+  .menuSheet {
+    top: 74px;
+    right: 16px;
+    width: calc(100% - 2.2rem);
+  }
+
+  .menuItem {
+    font-size: 0.52rem;
+    padding: 0.5rem 0.6rem;
+  }
+
+  .menuIcon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .tickerBar {
+    top: 80px;
   }
 
   .tickerTrack {
     animation-duration: 25s;
-    font-size: 0.5rem;
+    font-size: 0.48rem;
   }
 }

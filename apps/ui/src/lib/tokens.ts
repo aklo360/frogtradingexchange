@@ -7,6 +7,7 @@ export type TokenOption = {
   isVerified?: boolean;
   tags?: string[];
   organicScore?: number;
+  featured?: boolean;
 };
 
 export const WRAPPED_SOL_MINT =
@@ -84,22 +85,34 @@ export const DEFAULT_TOKEN_OPTIONS: TokenOption[] = [
       "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/bSo13r4TkiE4KumL71LsHTPpL2euBYLFx6h9HP3piy1/logo.png",
   },
   {
-    mint: "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
-    symbol: "RAY",
-    name: "Raydium",
+    mint: "5VsPJ2EG7jjo3k2LPzQVriENKKQkNUTzujEzuaj4Aisf",
+    symbol: "ROCK",
+    name: "Zenrock",
     decimals: 6,
     isVerified: true,
+    featured: true,
     logoURI:
-      "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R/logo.png",
+      "https://spl-token-metadata.s3.eu-west-1.amazonaws.com/chain.png",
   },
   {
-    mint: "orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE",
-    symbol: "ORCA",
-    name: "Orca",
+    mint: "9hX59xHHnaZXLU6quvm5uGY2iDiT3jczaReHy6A6TYKw",
+    symbol: "zenBTC",
+    name: "Zenrock BTC",
+    decimals: 8,
+    isVerified: true,
+    featured: true,
+    logoURI:
+      "https://zenrock-public-images.s3.eu-west-1.amazonaws.com/zenBTC-logo.svg",
+  },
+  {
+    mint: "H4phNbsqjV5rqk8u6FUACTLB6rNZRTAPGnBb8KXJpump",
+    symbol: "SSE",
+    name: "Solana Social Explorer",
     decimals: 6,
     isVerified: true,
+    featured: true,
     logoURI:
-      "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE/logo.png",
+      "https://ipfs.io/ipfs/QmT4fG3jhXv3dcvEVdkvAqi8RjXEmEcLS48PsUA5zSb1RY",
   },
 ];
 

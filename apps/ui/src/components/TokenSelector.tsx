@@ -138,6 +138,43 @@ const isValidMintAddress = (value: string) => {
   }
 };
 
+const buildSuggestedList = (candidates: TokenOption[]) => {
+  const featuredTokens = DEFAULT_TOKEN_OPTIONS.filter((token) => token.featured);
+  const seen = new Set<string>();
+  const ordered: TokenOption[] = [];
+
+  const maxPrimary = Math.max(
+    0,
+    SUGGESTED_LIMIT -
+      featuredTokens.filter((token) => !seen.has(token.mint)).length,
+  );
+
+  for (const token of candidates) {
+    if (token.featured) continue;
+    if (seen.has(token.mint)) continue;
+    ordered.push(token);
+    seen.add(token.mint);
+    if (ordered.length >= maxPrimary) break;
+  }
+
+  for (const token of featuredTokens) {
+    if (seen.has(token.mint)) continue;
+    ordered.push(token);
+    seen.add(token.mint);
+  }
+
+  if (ordered.length < SUGGESTED_LIMIT) {
+    for (const token of candidates) {
+      if (seen.has(token.mint)) continue;
+      ordered.push(token);
+      seen.add(token.mint);
+      if (ordered.length >= SUGGESTED_LIMIT) break;
+    }
+  }
+
+  return ordered.slice(0, SUGGESTED_LIMIT);
+};
+
 type TokenSelectorProps = {
   id: string;
   label: string;
@@ -164,9 +201,8 @@ export const TokenSelector = ({
     ...DEFAULT_TOKEN_OPTIONS,
   ]);
   const [suggestedTokens, setSuggestedTokens] = useState<TokenOption[]>(() =>
-    TRENDING_TOKEN_MINTS.map((mint) => DEFAULT_TOKEN_MAP.get(mint)!).slice(
-      0,
-      SUGGESTED_LIMIT,
+    buildSuggestedList(
+      TRENDING_TOKEN_MINTS.map((mint) => DEFAULT_TOKEN_MAP.get(mint)!),
     ),
   );
   const [searchResults, setSearchResults] = useState<TokenOption[]>([]);
@@ -220,7 +256,7 @@ export const TokenSelector = ({
 
         if (trending.length) {
           setBaseTokens((prev) => mergeTokens(prev, trending));
-          const trendingSuggested = trending
+          const trendingFiltered = trending
             .filter(
               (token) =>
                 (token.isVerified || token.tags?.includes("verified")) &&
@@ -228,10 +264,9 @@ export const TokenSelector = ({
             )
             .sort(
               (a, b) => (b.organicScore ?? 0) - (a.organicScore ?? 0),
-            )
-            .slice(0, SUGGESTED_LIMIT);
-          if (trendingSuggested.length) {
-            setSuggestedTokens(trendingSuggested);
+            );
+          if (trendingFiltered.length) {
+            setSuggestedTokens(buildSuggestedList(trendingFiltered));
           }
         }
     };
@@ -560,23 +595,13 @@ export const TokenSelector = ({
         id={id}
         className={styles.tokenSelect}
         onClick={() => setOpen(true)}
+        title={`${selectedToken.name} (${formatMintAddress(selectedToken.mint)})`}
       >
-        <div className={styles.tokenSelectContent}>
+        <span className={styles.tokenSelectContent}>
           <TokenBadge token={selectedToken} small />
-          <div className={styles.tokenSelectMeta}>
-            <span className={styles.tokenSelectSymbol}>
-              {selectedToken.symbol}
-              {selectedToken.isVerified && (
-                <span className={styles.tokenVerified} aria-label="Verified token">
-                  ✓
-                </span>
-              )}
-            </span>
-            <span className={styles.tokenSelectMint}>
-              {formatMintAddress(selectedToken.mint)}
-            </span>
-          </div>
-        </div>
+          <span className={styles.tokenSelectSymbol}>{selectedToken.symbol}</span>
+        </span>
+        <span className={styles.srOnly}>{formatMintAddress(selectedToken.mint)}</span>
         <svg
           className={styles.tokenSelectChevron}
           viewBox="0 0 24 24"

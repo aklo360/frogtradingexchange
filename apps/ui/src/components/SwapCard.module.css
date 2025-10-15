@@ -187,15 +187,13 @@
 
 .tokenControls {
   display: flex;
-  gap: 0.9rem;
-  align-items: stretch;
+  gap: 0.85rem;
+  align-items: center;
 }
 
 .tokenSelectGroup {
   display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-  min-width: 160px;
+  align-items: center;
 }
 
 .tokenSelect {
@@ -233,30 +231,17 @@
 .tokenSelectContent {
   display: inline-flex;
   align-items: center;
-  gap: 0.7rem;
+  gap: 0.55rem;
 }
 
-.tokenSelectMeta {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.15rem;
-}
-
-.tokenSelectSymbol {
+ .tokenSelectSymbol {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: #eafdf4;
-}
-
-.tokenSelectMint {
-  font-size: 0.56rem;
-  letter-spacing: 0.08em;
-  color: rgba(234, 253, 244, 0.55);
 }
 
 .tokenSelectChevron {
@@ -294,9 +279,9 @@
 .amountGroup {
   flex: 1;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  justify-content: center;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
   gap: 0.45rem;
 }
 
@@ -811,26 +796,30 @@
 
 @media (max-width: 900px) {
   .header {
-    flex-direction: column;
-    align-items: flex-start;
+    flex-direction: row;
+    align-items: center;
+    gap: 1rem;
   }
 
   .swapMeta {
-    align-items: flex-start;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
   }
 
   .tokenControls {
-    flex-direction: column;
-    align-items: stretch;
+    flex-direction: row; /* keep single-row layout on mobile */
+    align-items: center;
   }
 
   .amountGroup {
-    align-items: flex-start;
-    text-align: left;
+    align-items: center;
+    text-align: right;
   }
 
   .tokenAmount {
-    text-align: left;
+    text-align: right;
   }
 
   .switchButton {
@@ -848,7 +837,7 @@
 @media (max-width: 600px) {
   .swapCard {
     padding: 1.9rem 1.5rem;
-    gap: 1.6rem;
+    gap: 1.4rem;
   }
 
   .header h1 {
@@ -856,7 +845,16 @@
   }
 
   .tokenRow {
-    padding: 1.2rem;
+    padding: 1rem 1.05rem;
+    gap: 0.7rem;
+  }
+
+  .tokenRow:first-of-type {
+    padding-bottom: 1.35rem;
+  }
+
+  .tokenRow:last-of-type {
+    padding-top: 1.35rem;
   }
 
   .tokenAmount {
@@ -866,5 +864,18 @@
   .balanceGroup {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .tradeBox {
+    gap: 0.9rem;
+  }
+
+  .quoteSummary {
+    padding: 1.25rem 1.1rem;
+    gap: 0.85rem;
+  }
+
+  .summaryGrid {
+    gap: 0.9rem;
   }
 }
