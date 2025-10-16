@@ -111,7 +111,7 @@ pnpm dev                   # start Next.js (3000) + worker (8787)
 - **`TokenSelector`**: Jupiter-style modal picker with verified suggestions (organic score ≥93), search across symbol/name/mint, arbitrary mint support (falls back to on-chain mint decimals), and sponsor slots (ROCK, zenBTC, SSE) injected via `featured` metadata.
 - **`Ticker`**: Header marquee listing top verified tokens (organic score ≥93) from Jupiter, showing the **6‑hour** price change. Refreshes every 60s and gracefully degrades to curated defaults.
 - **`SolanaProvider`**: Wraps wallet adapter contexts, shared across the App Router tree.
-- **Branding**: Header uses `logo.png` (slightly reduced on mobile) with the `sticker/excited.webm` loop pinned to its left on all breakpoints, while larger screens cycle the broader sticker set. A compact neon hamburger menu replaces the header wallet button on narrow viewports, housing wallet/audio/help/chat shortcuts. Favicon/icon pipeline relies on `sbficon.png` via Next metadata route.
+- **Branding**: Header centers `logo.png` with a Titan-powered subtitle flanked by `sticker/excited.webm` and `sticker/wink.webm` on desktop, while mobile keeps the logo tucked 16px from the edge and hides the sticker/tagline for clarity. A compact neon hamburger menu replaces the header wallet button on narrow viewports, housing wallet/audio/help/chat shortcuts. Favicon/icon pipeline relies on `sbficon.png` via Next metadata route.
 
 ### Backend modules
 

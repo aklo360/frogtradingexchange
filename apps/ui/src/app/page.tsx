@@ -32,24 +32,36 @@ export default function Home() {
       <header className={styles.headerBar}>
         <div className={styles.headerInner}>
           <div className={styles.brandGroup}>
-            <video
-              src="/sticker/excited.webm"
-              className={`${styles.headerSticker} ${styles.headerStickerLarge}`}
-              autoPlay
-              loop
-              muted
-              playsInline
-              aria-hidden="true"
-            />
-            <h1>
-              <span className={styles.srOnly}>Frog Trading Exchange</span>
-              <img
-                src="/logo.png"
-                alt="Frog Trading Exchange"
-                className={styles.brandLogo}
-                loading="lazy"
+            <div className={styles.brandRow}>
+              <video
+                src="/sticker/excited.webm"
+                className={`${styles.headerSticker} ${styles.headerStickerLarge}`}
+                autoPlay
+                loop
+                muted
+                playsInline
+                aria-hidden="true"
               />
-            </h1>
+              <h1>
+                <span className={styles.srOnly}>Frog Trading Exchange</span>
+                <img
+                  src="/logo.png"
+                  alt="Frog Trading Exchange"
+                  className={styles.brandLogo}
+                  loading="lazy"
+                />
+              </h1>
+              <video
+                src="/sticker/wink.webm"
+                className={`${styles.headerSticker} ${styles.headerStickerLarge}`}
+                autoPlay
+                loop
+                muted
+                playsInline
+                aria-hidden="true"
+              />
+            </div>
+            <p className={styles.tagline}>Powered by Titan for the best prices on Solana.</p>
           </div>
         </div>
         <div className={styles.rightControls}>
@@ -83,7 +95,7 @@ export default function Home() {
                 alt=""
                 className={styles.menuIcon}
               />
-              <span>{muted ? "Unmute Audio" : "Mute Audio"}</span>
+              <span>{muted ? "Unmute" : "Mute"}</span>
             </button>
             <button type="button" className={styles.menuItem} onClick={closeMenu}>
               <img src="/info.svg" alt="" className={styles.menuIcon} />

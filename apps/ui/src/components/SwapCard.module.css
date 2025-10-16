@@ -150,7 +150,6 @@
 .balanceGroup {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
 }
 
 .balanceLabel {
@@ -163,6 +162,15 @@
 .balanceShortcuts {
   display: inline-flex;
   gap: 0.35rem;
+}
+
+.shortcutRow {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.55rem);
+  display: inline-flex;
+  gap: 0.35rem;
+  pointer-events: auto;
 }
 
 .shortcutButton {
@@ -189,6 +197,7 @@
   display: flex;
   gap: 0.85rem;
   align-items: center;
+  padding-top: 0.35rem;
 }
 
 .tokenSelectGroup {
@@ -283,6 +292,7 @@
   align-items: center;
   justify-content: flex-end;
   gap: 0.45rem;
+  position: relative;
 }
 
 .tokenAmount {

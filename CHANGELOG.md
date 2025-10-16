@@ -1,9 +1,9 @@
 # Changelog
 
 ## 2025-10-15 — TBD
-- Tweaked the mobile header by shrinking the logo, restoring the `sticker/excited.webm` loop beside it, and slimming down the hamburger toggle for a lighter touch target.
-- Flattened the swap card header so Swap/Disconnect share a row and trimmed pay/receive/quote spacing to feel leaner on phones.
-- Refreshed engineering guidelines to capture the new mobile header and compact swap layout.
+- Tweaked the header: logo re-centered with Titan subtitle flanked by `sticker/excited.webm` and `sticker/wink.webm` on desktop, while mobile keeps the logo inset 16px and hides the sticker/tagline; also thinned the hamburger bars/border for a lighter touch.
+- Flattened the swap card header so Swap/Disconnect share a row, trimmed pay/receive/quote spacing, lowered the balance shortcuts, and shortened the quote preview label to "Min" for a leaner mobile scan.
+- Refreshed engineering guidelines to capture the updated header treatment and compact swap layout.
 
 ## 2025-10-14 — d43f725
 - Replaced the header text with the branded `logo.png`, tightened global CSS, and widened ticker spacing/tempo.

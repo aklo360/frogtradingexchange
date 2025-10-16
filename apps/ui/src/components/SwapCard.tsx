@@ -595,24 +595,6 @@ export const SwapCard = () => {
               <span className={styles.balanceLabel}>
                 Balance: {displayedBalance} {fromToken.symbol}
               </span>
-              {canUseBalanceShortcuts && (
-                <div className={styles.balanceShortcuts}>
-                  <button
-                    type="button"
-                    className={styles.shortcutButton}
-                    onClick={() => handleBalanceShortcut(0.5)}
-                  >
-                    50%
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.shortcutButton}
-                    onClick={() => handleBalanceShortcut(1)}
-                  >
-                    Max
-                  </button>
-                </div>
-              )}
             </div>
           </div>
 
@@ -639,6 +621,26 @@ export const SwapCard = () => {
                 onChange={(event) => handleAmountChange(event.target.value)}
                 placeholder="0.00"
               />
+              {canUseBalanceShortcuts && (
+                <div className={styles.shortcutRow}>
+                  <div className={styles.balanceShortcuts}>
+                    <button
+                      type="button"
+                      className={styles.shortcutButton}
+                      onClick={() => handleBalanceShortcut(0.5)}
+                    >
+                      50%
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.shortcutButton}
+                      onClick={() => handleBalanceShortcut(1)}
+                    >
+                      Max
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -734,7 +736,7 @@ export const SwapCard = () => {
               <span className={styles.summaryValue}>{routersLabel}</span>
             </div>
             <div className={styles.summaryItem}>
-              <span className={styles.summaryLabel}>Min Received</span>
+              <span className={styles.summaryLabel}>Min</span>
               <span className={styles.summaryValue}>{minReceivedLabel}</span>
             </div>
             <div className={styles.summaryItem}>
