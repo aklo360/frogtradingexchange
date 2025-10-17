@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono, Press_Start_2P } from "next/font/google";
 import "./globals.css";
 import { SolanaProvider } from "@/providers/SolanaProvider";
+import { AudioProvider } from "@/providers/AudioProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -45,7 +46,9 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${pressStart.variable}`}
       >
-        <SolanaProvider>{children}</SolanaProvider>
+        <SolanaProvider>
+          <AudioProvider>{children}</AudioProvider>
+        </SolanaProvider>
       </body>
     </html>
   );

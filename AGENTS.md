@@ -21,12 +21,17 @@ apps/
       logo.png                  # Header mark (840x40)
       sbficon.png               # Pixel frog used for favicon + branding
       favicon.{ico,png}
+      sparkle.svg               # Generic pixel sparkle
+      swap.svg                  # Pixel swap glyph used for nav
+      trophy.svg                # Pixel trophy used for leaderboard nav
+      wallet.svg                # Pixel wallet used for hamburger menu
       sticker/                  # Header webm loops
     src/
       app/
         layout.tsx              # Root layout + font wiring
         page.tsx                # Landing page, embeds <Ticker/> + <SwapCard/>
         page.module.css         # Hero layout, ticker animation, header chrome
+        leaderboard/            # Ribbit XP leaderboard route + styling
         icon.tsx                # Inline PNG favicon for Next metadata route
         globals.css
       components/
@@ -43,6 +48,7 @@ apps/
         tokens.ts               # Default verified token metadata + helpers
       providers/
         SolanaProvider.tsx      # Wallet adapter context
+        AudioProvider.tsx       # Shared background audio context
 packages/
   shared/                       # (placeholder for shared packages)
 scripts/
@@ -96,10 +102,13 @@ pnpm dev                   # start Next.js (3000) + worker (8787)
 1. **Quotes & swaps**  
    UI → `/api/frogx/*` → Pages worker → `frogx-api` Worker → Titan WebSocket/REST → normalized response (transaction base64, instructions, routing metadata).
 
-2. **Wallet RPC**  
+2. **Wallet XP (client-side)**  
+   XP badge currently shows a placeholder (4,269 XP) once a wallet connects. Replace with real stats when Titan exposes XP API.
+
+3. **Wallet RPC**  
    UI → `/rpc` → Pages worker → private `SOLANA_RPC_URL` (Helius). Keeps RPC key server-side while dApps use the proxy.
 
-3. **Live token data**  
+4. **Live token data**  
    UI fetches Jupiter Token API v2:
    - `tokens/v2/tag?query=verified` (baseline)
    - `tokens/v2/toporganicscore/5m?limit=50` (suggested + ticker)
@@ -107,21 +116,24 @@ pnpm dev                   # start Next.js (3000) + worker (8787)
 
 ### Frontend modules
 
-- **`SwapCard`**: Wallet-aware Titan swap surface. Streams quote previews via `/api/frogx/quotes`, handles balance polling (native SOL vs SPL), assembles transactions (lookup tables) and submits via wallet adapter. Includes Titan router insights and USDC estimates, with a compact mobile layout that keeps Swap/Disconnect headers aligned and trims vertical padding across sections.
+- **`SwapCard`**: Wallet-aware Titan swap surface. Streams quote previews via `/api/frogx/quotes`, handles balance polling (native SOL vs SPL), assembles transactions (lookup tables) and submits via wallet adapter. Includes Titan router insights and USDC estimates, with a compact mobile layout that keeps Swap/Disconnect headers aligned and trims vertical padding across sections. XP badge (4,269 XP) renders in the header when a wallet is connected.
 - **`TokenSelector`**: Jupiter-style modal picker with verified suggestions (organic score ≥93), search across symbol/name/mint, arbitrary mint support (falls back to on-chain mint decimals), and sponsor slots (ROCK, zenBTC, SSE) injected via `featured` metadata.
 - **`Ticker`**: Header marquee listing top verified tokens (organic score ≥93) from Jupiter, showing the **6‑hour** price change. Refreshes every 60s and gracefully degrades to curated defaults.
+- **`Leaderboard`** (`/leaderboard`): Displays 100 mock Ribbit XP rows (lazy-loaded 20 at a time). Top 3 rows glow gold/silver/bronze with matching avatar halos. Uses same header + audio context as home.
 - **`SolanaProvider`**: Wraps wallet adapter contexts, shared across the App Router tree.
-- **Branding**: Header centers `logo.png` with a Titan-powered subtitle flanked by `sticker/excited.webm` and `sticker/wink.webm` on desktop, while mobile keeps the logo tucked 16px from the edge and hides the sticker/tagline for clarity. A compact neon hamburger menu replaces the header wallet button on narrow viewports, housing wallet/audio/help/chat shortcuts. Favicon/icon pipeline relies on `sbficon.png` via Next metadata route.
+- **`AudioProvider`**: Ensures background music starts once and persists through route changes; exposes mute state for UI controls.
+- **Branding**: Header centers `logo.png` with a Titan-powered subtitle flanked by `sticker/excited.webm` and `sticker/wink.webm` on desktop, while mobile keeps the logo tucked 16px from the edge and hides the sticker/tagline for clarity. A neon wallet icon replaces the hamburger bars, showing the XP badge when connected.
+- Favicon/icon pipeline relies on `sbficon.png` via Next metadata route.
 
 ### Backend modules
 
 - **`env.ts`**: Runtime env validation (Titan + Solana keys).
 - **`routes.ts`**: REST surface for `/info`, `/quotes`, `/swap`. Bridges HTTP requests to Titan logic and formats responses for the UI.
-- **`titan.ts`**: Maintains Titan WebSocket sessions, normalizes quotes/swaps, handles failover and region ordering.
+- **`titan.ts`**: Maintains Titan WebSocket sessions, normalizes quotes/swaps, handles failover and region ordering. Concurrent region attempts via `Promise.any` with contextual errors.
 
 ### Styling system
 
-- CSS Modules per component (e.g., `SwapCard.module.css`, `page.module.css`) deliver bespoke retro styling (animated borders, ticker marquee). Fonts via `next/font` (Geist, Press Start 2P).
+- CSS Modules per component (e.g., `SwapCard.module.css`, `leaderboard.module.css`) deliver bespoke retro styling (animated borders, ticker marquee). Fonts via `next/font` (Geist, Press Start 2P).
 - Accessibility aids: visually-hidden text for brand logo (`.srOnly`), keyboard-dismissable modals, descriptive aria labels for ticker and selectors.
 
 ## 6. Coding Practices
@@ -138,14 +150,14 @@ pnpm dev                   # start Next.js (3000) + worker (8787)
 - Unit tests: `pnpm --filter @frogx/ui run test`
 - Lint: `pnpm --filter @frogx/ui run lint`
 - Planned integration tests: `pnpm --filter @frogx/ui run test:e2e`
-- Manual smoke checks before deploy: wallet connects, quote renders, swap returns Titan payload.
+- Manual smoke checks before deploy: wallet connects, XP badge renders, quote stream returns data, swap returns Titan payload.
 
 ## 8. Deployment Checklist
 
 1. Update `.env.local` / Cloudflare secrets if credentials change.
 2. `pnpm run deploy:prod`
 3. Verify Worker endpoints (`/api/frogx/info`, `/api/frogx/quotes`).
-4. Confirm `https://frogtrading.exchange/` shows wallet balance and live quotes.
+4. Confirm `https://frogtrading.exchange/` shows wallet balance, XP badge, and live quotes.
 5. Monitor Cloudflare Worker logs (`wrangler tail`) for errors.
 
 ## 9. Troubleshooting
@@ -155,5 +167,7 @@ pnpm dev                   # start Next.js (3000) + worker (8787)
 - `pnpm install` prompts → add `--frozen-lockfile` in CI to enforce lock consistency.
 - Build failure in `next-on-pages` due to offline registry access → rerun on a machine with npm connectivity.
 - Jupiter API anomalies → verify `lite-api.jup.ag` availability; ticker/picker fall back to curated defaults but should surface console warnings.
+- Quotes timing out → Titan demo regions may be down; verify with `curl -X POST https://frogx-api.aklo.workers.dev/api/frogx/quotes` and Titan status.
 
-Keep this document updated when architecture or tooling shifts. With the monorepo stabilized and one-command deploys, focus on swap UX, Titan resiliency, and Solana-edge testing.
+Keep this document updated when architecture or tooling shifts. Focus on swap UX, Titan resiliency, Solana-edge testing, XP reporting, and Ribbit-themed leaderboard polish.
+

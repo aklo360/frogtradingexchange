@@ -1,19 +1,25 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { SwapCard } from "@/components/SwapCard";
 import { WalletButton } from "@/components/WalletButton";
-import { BackgroundAudio } from "@/components/BackgroundAudio";
 import { Ticker } from "@/components/Ticker";
+import { useAudio } from "@/providers/AudioProvider";
+import { useWallet } from "@solana/wallet-adapter-react";
 import styles from "./page.module.css";
 
 export default function Home() {
+  const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [muted, setMuted] = useState(false);
+  const { muted, toggleMuted } = useAudio();
+  const { connected } = useWallet();
 
   const toggleMenu = () => setMenuOpen((open) => !open);
   const closeMenu = () => setMenuOpen(false);
-  const handleToggleMute = () => setMuted((prev) => !prev);
+  const handleToggleMute = () => {
+    toggleMuted();
+  };
 
   useEffect(() => {
     if (!menuOpen) return undefined;
@@ -28,7 +34,6 @@ export default function Home() {
 
   return (
     <main className={styles.main}>
-      <BackgroundAudio muted={muted} />
       <header className={styles.headerBar}>
         <div className={styles.headerInner}>
           <div className={styles.brandGroup}>
@@ -65,6 +70,12 @@ export default function Home() {
           </div>
         </div>
         <div className={styles.rightControls}>
+          {connected ? (
+            <div className={styles.xpChip} aria-label="Your XP">
+              <span className={styles.xpValue}>4,269 XP</span>
+              <img src="/sparkle.svg" alt="" className={styles.sparkleIcon} />
+            </div>
+          ) : null}
           <button
             type="button"
             className={styles.menuButton}
@@ -72,9 +83,7 @@ export default function Home() {
             aria-expanded={menuOpen}
             onClick={toggleMenu}
           >
-            <span />
-            <span />
-            <span />
+            <img src="/wallet.svg" alt="" className={styles.menuButtonIcon} />
           </button>
         </div>
         <div
@@ -85,6 +94,21 @@ export default function Home() {
             <div className={styles.menuWalletWrapper} onClick={closeMenu}>
               <WalletButton className={styles.menuWallet} />
             </div>
+            <button
+              type="button"
+              className={styles.menuItem}
+              onClick={() => {
+                closeMenu();
+                router.push("/leaderboard");
+              }}
+            >
+              <img
+                src="/trophy.svg"
+                alt=""
+                className={`${styles.menuIcon} ${styles.pixelIcon}`}
+              />
+              <span>LEADERBOARD</span>
+            </button>
             <button
               type="button"
               className={styles.menuItem}
