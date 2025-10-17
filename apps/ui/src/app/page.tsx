@@ -61,7 +61,7 @@ export default function Home() {
                 aria-hidden="true"
               />
             </div>
-            <p className={styles.tagline}>Powered by Titan for the best prices on Solana.</p>
+            <p className={styles.tagline}>Powered by Titan for the best prices on Solana</p>
           </div>
         </div>
         <div className={styles.rightControls}>

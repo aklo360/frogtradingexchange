@@ -558,22 +558,51 @@ const requestTitanQuotes = (
     ws.addEventListener("close", handleClose);
   });
 
+type QuoteAttemptError = Error & { url: string };
+
+const wrapQuoteError = (url: string, error: unknown): QuoteAttemptError => {
+  const baseError =
+    error instanceof Error ? error : new Error(String(error ?? "UNKNOWN_ERROR"));
+  const wrapped = new Error(baseError.message, { cause: baseError }) as QuoteAttemptError;
+  wrapped.name = "TitanQuoteAttemptError";
+  wrapped.url = url;
+  return wrapped;
+};
+
 export const fetchBestQuote = async (
   payload: QuoteRequest,
   config: TitanConfig,
 ): Promise<QuoteResponse> => {
   const candidateUrls = getCandidateWsUrls(config);
-  let lastError: unknown;
-
-  for (const wsUrl of candidateUrls) {
-    try {
-      return await requestTitanQuotes(wsUrl, payload, config);
-    } catch (error) {
-      lastError = error;
-    }
+  if (candidateUrls.length === 0) {
+    throw new Error("NO_TITAN_REGIONS");
   }
 
-  throw lastError ?? new Error("QUOTE_STREAM_UNAVAILABLE");
+  const attempts = candidateUrls.map((wsUrl) =>
+    requestTitanQuotes(wsUrl, payload, config).catch((error) => {
+      throw wrapQuoteError(wsUrl, error);
+    }),
+  );
+
+  try {
+    return await Promise.any(attempts);
+  } catch (aggregate) {
+    if (aggregate instanceof AggregateError && aggregate.errors.length > 0) {
+      const messages = aggregate.errors
+        .map((error) => {
+          if (error instanceof Error) {
+            const url =
+              (error as QuoteAttemptError).url ??
+              (error.cause && (error.cause as QuoteAttemptError).url);
+            return url ? `${url}: ${error.message}` : error.message;
+          }
+          return String(error);
+        })
+        .join(" | ");
+      throw new Error(messages || "QUOTE_STREAM_UNAVAILABLE");
+    }
+    throw aggregate;
+  }
 };
 
 export const resolveHttpUrl = (
