@@ -82,11 +82,14 @@ const resolveWsUrl = (env: Env, fallbackRegion: string) => {
 };
 
 const resolvePreferredRegions = (env: Env, fallbackRegion: string) => {
-  const regions =
-    parseList(env.TITAN_REGION_ORDER) || parseList(env.TITAN_DEMO_REGION_ORDER);
+  const explicitRegions = parseList(env.TITAN_REGION_ORDER);
+  if (explicitRegions.length > 0) {
+    return explicitRegions;
+  }
 
-  if (regions.length > 0) {
-    return regions;
+  const demoRegions = parseList(env.TITAN_DEMO_REGION_ORDER);
+  if (demoRegions.length > 0) {
+    return demoRegions;
   }
 
   return [fallbackRegion];

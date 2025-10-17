@@ -93,10 +93,33 @@ const ensureProtocol = (value: string, defaultProtocol: "wss" | "https") => {
   return `${defaultProtocol}://${value}`;
 };
 
-const ensureWsUrl = (template: string, region: string | undefined, token: string | undefined) => {
+const ensureWsUrl = (
+  template: string,
+  region: string | undefined,
+  token: string | undefined,
+) => {
   const replaced = replaceRegionPlaceholder(template, region);
   const withProtocol = ensureProtocol(replaced, "wss");
   const parsed = new URL(withProtocol);
+
+  if (replaced === template && region) {
+    const hostnameParts = parsed.hostname.split(".").filter(Boolean);
+    let resolvedHost: string | null = null;
+
+    if (region.includes(".")) {
+      resolvedHost = region;
+    } else if (hostnameParts.length >= 1) {
+      hostnameParts[0] = region;
+      resolvedHost = hostnameParts.join(".");
+    } else {
+      resolvedHost = region;
+    }
+
+    if (resolvedHost) {
+      parsed.hostname = resolvedHost;
+    }
+  }
+
   if (!parsed.pathname || parsed.pathname === "/") {
     parsed.pathname = "/api/v1/ws";
   }
@@ -124,13 +147,28 @@ const getCandidateWsUrls = (config: TitanConfig): string[] => {
     base.includes(placeholder),
   );
 
-  if (hasPlaceholder && config.preferredRegions.length > 0) {
-    return config.preferredRegions.map((region) =>
-      ensureWsUrl(base, region, config.token),
-    );
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+
+  const addCandidate = (region: string | undefined) => {
+    const url = ensureWsUrl(base, region, config.token);
+    if (!seen.has(url)) {
+      seen.add(url);
+      candidates.push(url);
+    }
+  };
+
+  if (config.preferredRegions.length > 0) {
+    for (const region of config.preferredRegions) {
+      addCandidate(region);
+    }
   }
 
-  return [ensureWsUrl(base, undefined, config.token)];
+  if (!hasPlaceholder || config.preferredRegions.length === 0) {
+    addCandidate(undefined);
+  }
+
+  return candidates;
 };
 
 const toBigInt = (value: number | bigint | undefined): bigint => {
