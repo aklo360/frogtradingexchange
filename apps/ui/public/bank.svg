@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="bank-solid" xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 24 24">
+  <!-- Generator: Adobe Illustrator 29.8.2, SVG Export Plug-In . SVG Version: 2.1.1 Build 3)  -->
+  <defs>
+    <style>
+      .st0 {
+        fill: #fff;
+      }
+    </style>
+  </defs>
+  <polygon class="st0" points="23 20 23 22 22 22 22 23 2 23 2 22 1 22 1 20 3 20 3 19 4 19 4 10 6 10 6 19 8 19 8 10 10 10 10 19 14 19 14 10 16 10 16 19 18 19 18 10 20 10 20 19 21 19 21 20 23 20"/>
+  <path class="st0" d="M20,5v-1h-2v-1h-2v-1h-2v-1h-4v1h-2v1h-2v1h-2v1H1v2h1v1h1v1h18v-1h1v-1h1v-2h-3ZM11,7v-1h-1v-2h1v-1h2v1h1v2h-1v1h-2Z"/>
+</svg>

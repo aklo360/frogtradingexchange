@@ -159,6 +159,23 @@ export default function LeaderboardPage() {
             <div className={homeStyles.menuWalletWrapper} onClick={closeMenu}>
               <WalletButton className={homeStyles.menuWallet} />
             </div>
+            {connected ? (
+              <button
+                type="button"
+                className={homeStyles.menuItem}
+                onClick={() => {
+                  closeMenu();
+                  router.push("/profile");
+                }}
+              >
+                <img
+                  src="/bank.svg"
+                  alt=""
+                  className={homeStyles.menuIcon}
+                />
+                <span>PROFILE</span>
+              </button>
+            ) : null}
             <button
               type="button"
               className={homeStyles.menuItem}

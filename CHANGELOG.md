@@ -4,6 +4,7 @@
 
 ### Added
 - XP header chip that persists across routes (placeholder `4,269 XP` with sparkle).
+- Ribbit profile hub with wardrobe selection, stats, achievements, activity timeline, and quests.
 - AudioProvider to keep background music playing between navigations.
 - Ribbit XP leaderboard page with glow tiers for top performers.
 - Pixel trophy, wallet, swap, and sparkle icons in `/public`.

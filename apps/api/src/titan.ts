@@ -21,6 +21,10 @@ export type QuoteRequest = {
   slippageBps: number;
   priorityFee: number;
   userPublicKey: string;
+  feeAccount?: string;
+  feeBps?: number;
+  feeFromInputMint?: boolean;
+  feeMint?: string;
 };
 
 type TitanInstructionAccountPayload = {
@@ -35,16 +39,28 @@ type TitanInstructionPayload = {
   d?: unknown;
 };
 
+type TitanRoutePlanStep = {
+  label?: string;
+  feeMint?: unknown;
+  feeAmount?: number | bigint;
+};
+
+type TitanPlatformFee = {
+  amount?: number | bigint;
+  fee_bps?: number;
+};
+
 type TitanSwapRoute = {
   inAmount: number | bigint;
   outAmount: number | bigint;
   slippageBps?: number;
-  steps?: Array<{ label?: string }>;
+  steps?: TitanRoutePlanStep[];
   transaction?: unknown;
   instructions?: TitanInstructionPayload[];
   addressLookupTables?: unknown;
   computeUnits?: number | bigint;
   computeUnitsSafe?: number | bigint;
+  platformFee?: TitanPlatformFee;
 };
 
 type TitanSwapQuotes = {
@@ -75,6 +91,12 @@ export type QuoteResponse = {
   computeUnitsSafe?: number;
   executable: true;
   simulated: true;
+  platformFee?: {
+    mint: string;
+    amount: string;
+    feeBps: number;
+    direction: "input" | "output";
+  };
 };
 
 const replaceRegionPlaceholder = (template: string, region?: string) => {
@@ -305,6 +327,69 @@ const pickBestRoute = (quotes: TitanSwapQuotes["quotes"]) => {
   return sorted[0];
 };
 
+const extractRoutePlatformFee = (
+  route: TitanSwapRoute,
+  payload: QuoteRequest,
+): QuoteResponse["platformFee"] => {
+  let resolvedMint: string | null = null;
+  if (Array.isArray(route.steps)) {
+    for (const step of route.steps) {
+      if (!step || !step.feeMint) continue;
+      try {
+        resolvedMint = toPubkeyString(step.feeMint);
+        if (resolvedMint) break;
+      } catch {
+        // ignore invalid fee mint entries
+      }
+    }
+  }
+
+  if (!resolvedMint) {
+    if (payload.feeMint) {
+      resolvedMint = payload.feeMint;
+    } else if (payload.feeFromInputMint) {
+      resolvedMint = payload.inMint;
+    } else {
+      resolvedMint = payload.outMint;
+    }
+  }
+
+  if (!resolvedMint) {
+    return undefined;
+  }
+
+  let feeAmount: number | bigint | undefined =
+    route.platformFee?.amount ?? undefined;
+
+  if (feeAmount === undefined && Array.isArray(route.steps)) {
+    for (const step of route.steps) {
+      if (step.feeAmount !== undefined && step.feeAmount !== null) {
+        feeAmount = step.feeAmount;
+        break;
+      }
+    }
+  }
+
+  const feeBps =
+    route.platformFee?.fee_bps !== undefined && route.platformFee.fee_bps !== null
+      ? Number(route.platformFee.fee_bps)
+      : payload.feeBps ?? 0;
+
+  let direction: "input" | "output" = "input";
+  if (resolvedMint === payload.outMint) {
+    direction = "output";
+  } else if (resolvedMint !== payload.inMint) {
+    direction = payload.feeFromInputMint ? "input" : "output";
+  }
+
+  return {
+    mint: resolvedMint,
+    amount: bigIntToString(feeAmount),
+    feeBps,
+    direction,
+  };
+};
+
 const transformQuotes = (
   swapQuotes: TitanSwapQuotes,
   payload: QuoteRequest,
@@ -349,6 +434,7 @@ const transformQuotes = (
     computeUnitsSafe,
     executable: true,
     simulated: true,
+    platformFee: extractRoutePlatformFee(bestRoute, payload),
   };
 };
 
@@ -468,6 +554,20 @@ const requestTitanQuotes = (
 
     const handleOpen = () => {
       try {
+        const transactionParams: Record<string, unknown> = {
+          userPublicKey: base58ToBytes(payload.userPublicKey),
+        };
+
+        if (payload.feeAccount) {
+          transactionParams.feeAccount = base58ToBytes(payload.feeAccount);
+        }
+        if (typeof payload.feeBps === "number") {
+          transactionParams.feeBps = payload.feeBps;
+        }
+        if (typeof payload.feeFromInputMint === "boolean") {
+          transactionParams.feeFromInputMint = payload.feeFromInputMint;
+        }
+
         const swapRequest = {
           swap: {
             inputMint: base58ToBytes(payload.inMint),
@@ -476,9 +576,7 @@ const requestTitanQuotes = (
             swapMode: "ExactIn",
             slippageBps: payload.slippageBps,
           },
-          transaction: {
-            userPublicKey: base58ToBytes(payload.userPublicKey),
-          },
+          transaction: transactionParams,
           update: {
             intervalMs: DEFAULT_UPDATE_INTERVAL_MS,
             numQuotes: DEFAULT_NUM_QUOTES,

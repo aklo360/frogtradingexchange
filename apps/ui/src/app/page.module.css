@@ -47,6 +47,24 @@
   margin: 0 auto;
 }
 
+.brandHomeButton {
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+
+.brandHomeButton:focus-visible {
+  outline: 2px solid #14f195;
+  outline-offset: 6px;
+}
+
+.brandHomeButton:active {
+  transform: translateY(1px);
+}
+
 /*
   The first line of the brand: left webm, center logo, right webm.
   Keeps all three on the same horizontal line and centered to the viewport via the parent containers.
@@ -278,6 +296,10 @@
 
 .pixelIcon {
   filter: invert(100%) saturate(0%) brightness(120%);
+}
+
+.trophyIcon {
+  filter: none;
 }
 
 .xpChip {

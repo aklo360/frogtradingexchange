@@ -41,7 +41,7 @@ for (const candidate of envFiles) {
   }
 }
 
-const forwardPrefixes = ["TITAN_", "SOLANA_", "QUOTE_"];
+const forwardPrefixes = ["TITAN_", "SOLANA_", "QUOTE_", "PLATFORM_FEE_"];
 
 const varArgs = [];
 for (const [key, value] of Object.entries(process.env)) {

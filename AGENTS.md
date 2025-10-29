@@ -32,6 +32,7 @@ apps/
         page.tsx                # Landing page, embeds <Ticker/> + <SwapCard/>
         page.module.css         # Hero layout, ticker animation, header chrome
         leaderboard/            # Ribbit XP leaderboard route + styling
+        profile/               # Player profile hub (wardrobe, stats, quests)
         icon.tsx                # Inline PNG favicon for Next metadata route
         globals.css
       components/
@@ -82,6 +83,7 @@ pnpm dev                   # start Next.js (3000) + worker (8787)
   - `SOLANA_RPC_URL` — private Helius RPC (used by `/rpc` proxy)
   - Optional: `API_ORIGIN` to point `/api/*` to a different worker base URL
 - UI **does not** need `NEXT_PUBLIC_SOLANA_RPC_URL` if you rely on `/rpc` proxy.
+- Platform fees (currently disabled by default): flip `PLATFORM_FEE_ENABLED=true` when Titan enables fee management for our token, then set `PLATFORM_FEE_BPS`, `PLATFORM_FEE_RECIPIENT`, and optional `PLATFORM_FEE_{TOKEN}_ACCOUNT` env vars to direct SOL/USDC/USDT fees to specific ATAs.
 
 ## 4. Commands
 
@@ -120,6 +122,7 @@ pnpm dev                   # start Next.js (3000) + worker (8787)
 - **`TokenSelector`**: Jupiter-style modal picker with verified suggestions (organic score ≥93), search across symbol/name/mint, arbitrary mint support (falls back to on-chain mint decimals), and sponsor slots (ROCK, zenBTC, SSE) injected via `featured` metadata.
 - **`Ticker`**: Header marquee listing top verified tokens (organic score ≥93) from Jupiter, showing the **6‑hour** price change. Refreshes every 60s and gracefully degrades to curated defaults.
 - **`Leaderboard`** (`/leaderboard`): Displays 100 mock Ribbit XP rows (lazy-loaded 20 at a time). Top 3 rows glow gold/silver/bronze with matching avatar halos. Uses same header + audio context as home.
+- **`Profile`** (`/profile`): Ribbit XP player hub with wardrobe selection, arcade stats, badge cabinet, activity timeline, and quest board. All data mocked for now.
 - **`SolanaProvider`**: Wraps wallet adapter contexts, shared across the App Router tree.
 - **`AudioProvider`**: Ensures background music starts once and persists through route changes; exposes mute state for UI controls.
 - **Branding**: Header centers `logo.png` with a Titan-powered subtitle flanked by `sticker/excited.webm` and `sticker/wink.webm` on desktop, while mobile keeps the logo tucked 16px from the edge and hides the sticker/tagline for clarity. A neon wallet icon replaces the hamburger bars, showing the XP badge when connected.
@@ -170,4 +173,3 @@ pnpm dev                   # start Next.js (3000) + worker (8787)
 - Quotes timing out → Titan demo regions may be down; verify with `curl -X POST https://frogx-api.aklo.workers.dev/api/frogx/quotes` and Titan status.
 
 Keep this document updated when architecture or tooling shifts. Focus on swap UX, Titan resiliency, Solana-edge testing, XP reporting, and Ribbit-themed leaderboard polish.
-

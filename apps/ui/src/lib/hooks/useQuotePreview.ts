@@ -31,6 +31,13 @@ type QuoteInstruction = {
   data: string;
 };
 
+type QuotePlatformFee = {
+  mint: string;
+  amount: string;
+  feeBps: number;
+  direction: "input" | "output";
+};
+
 type QuotePreviewResponse = {
   amountOut: string;
   priceImpactBps: number;
@@ -45,6 +52,7 @@ type QuotePreviewResponse = {
   addressLookupTables?: string[];
   computeUnits?: number;
   computeUnitsSafe?: number;
+  platformFee?: QuotePlatformFee;
 };
 
 type QuotePreview = {
@@ -61,6 +69,7 @@ type QuotePreview = {
   addressLookupTables?: string[];
   computeUnits?: number;
   computeUnitsSafe?: number;
+  platformFee?: QuotePlatformFee;
 };
 
 export const useQuotePreview = (params: QuotePreviewParams) => {
@@ -131,6 +140,7 @@ export const useQuotePreview = (params: QuotePreviewParams) => {
             addressLookupTables: raw.addressLookupTables ?? [],
             computeUnits: raw.computeUnits,
             computeUnitsSafe: raw.computeUnitsSafe,
+            platformFee: raw.platformFee,
           },
         });
       } catch (error) {

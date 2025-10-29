@@ -39,6 +39,12 @@ export type Env = {
   TITAN_DEMO_WS_BASE_SCHEME?: string;
   TITAN_DEMO_WS_PATH?: string;
   QUOTE_FRESHNESS_SECONDS?: string;
+  PLATFORM_FEE_BPS?: string;
+  PLATFORM_FEE_ENABLED?: string;
+  PLATFORM_FEE_RECIPIENT?: string;
+  PLATFORM_FEE_SOL_ACCOUNT?: string;
+  PLATFORM_FEE_USDC_ACCOUNT?: string;
+  PLATFORM_FEE_USDT_ACCOUNT?: string;
 };
 
 export type TitanConfig = {

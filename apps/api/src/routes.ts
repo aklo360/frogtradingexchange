@@ -1,5 +1,10 @@
 import { getTitanConfig, type Env } from "./env";
 import {
+  getPlatformFeeConfig,
+  debugPlatformConfig,
+  resolvePlatformFee,
+} from "./fees";
+import {
   fetchBestQuote,
   resolveHttpUrl,
   type QuoteRequest,
@@ -42,6 +47,10 @@ export async function getInfo(env: Env): Promise<Response> {
 
 export async function postQuotes(request: Request, env: Env): Promise<Response> {
   const config = getTitanConfig(env);
+  const feeConfig = getPlatformFeeConfig(env);
+  if (feeConfig.enabled) {
+    debugPlatformConfig(feeConfig);
+  }
   console.log(
     "Titan quote request config",
     JSON.stringify({
@@ -69,6 +78,10 @@ export async function postQuotes(request: Request, env: Env): Promise<Response> 
   }
 
   try {
+    const usePlatformFee = feeConfig.enabled;
+    const feeResolution = usePlatformFee
+      ? resolvePlatformFee(feeConfig, inMint ?? "", outMint ?? "")
+      : null;
     const quote = await fetchBestQuote(
       {
         inMint: inMint ?? "",
@@ -77,6 +90,15 @@ export async function postQuotes(request: Request, env: Env): Promise<Response> 
         slippageBps: slippageBps ?? 0,
         priorityFee: priorityFee ?? 0,
         userPublicKey,
+
+        ...(usePlatformFee && feeResolution
+          ? {
+              feeAccount: feeResolution.feeAccount,
+              feeBps: feeResolution.feeBps,
+              feeFromInputMint: feeResolution.feeFromInputMint,
+              feeMint: feeResolution.feeMint,
+            }
+          : {}),
       },
       config,
     );
@@ -100,10 +122,17 @@ type SwapBuildPayload = {
   amountIn: string;
   slippageBps: number;
   priorityFee: number;
+  feeBps?: number;
+  feeFromInputMint?: boolean;
+  feeAccount?: string;
 };
 
 export async function postSwap(request: Request, env: Env): Promise<Response> {
   const config = getTitanConfig(env);
+  const feeConfig = getPlatformFeeConfig(env);
+  if (feeConfig.enabled) {
+    debugPlatformConfig(feeConfig);
+  }
   console.log(
     "Titan swap request config",
     JSON.stringify({
@@ -136,13 +165,31 @@ export async function postSwap(request: Request, env: Env): Promise<Response> {
   const region = config.preferredRegions[0];
   const url = resolveHttpUrl(config, "/frogx/swap", region);
 
+  const usePlatformFee = feeConfig.enabled;
+  const feeResolution = usePlatformFee
+    ? resolvePlatformFee(feeConfig, payload.inMint, payload.outMint)
+    : null;
+
+  const swapBody = {
+    ...payload,
+    ...(usePlatformFee && feeResolution
+      ? {
+          feeBps: feeResolution.feeBps,
+          feeFromInputMint: feeResolution.feeFromInputMint,
+          ...(feeResolution.feeAccount
+            ? { feeAccount: feeResolution.feeAccount }
+            : {}),
+        }
+      : {}),
+  };
+
   const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${config.token}`,
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(swapBody),
   });
 
   if (!response.ok) {
@@ -159,12 +206,22 @@ export async function postSwap(request: Request, env: Env): Promise<Response> {
     meta?: Record<string, unknown>;
   };
 
+  const meta = { ...(data.meta ?? {}) };
+  if (usePlatformFee && feeResolution) {
+    meta.resolvedPlatformFee = {
+      feeBps: feeResolution.feeBps,
+      mint: feeResolution.feeMint,
+      from: feeResolution.feeFromInputMint ? "input" : "output",
+      account: feeResolution.feeAccount ?? null,
+    };
+  }
+
   const mode = data.txBase64 ? "tx_base64" : "route";
 
   return json({
     mode,
     txBase64: data.txBase64 ?? null,
     route: data.route ?? null,
-    meta: data.meta ?? null,
+    meta,
   });
 }

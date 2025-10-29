@@ -36,7 +36,15 @@ export default function Home() {
     <main className={styles.main}>
       <header className={styles.headerBar}>
         <div className={styles.headerInner}>
-          <div className={styles.brandGroup}>
+          <button
+            type="button"
+            className={`${styles.brandGroup} ${styles.brandHomeButton}`}
+            onClick={() => {
+              closeMenu();
+              router.push("/");
+            }}
+            aria-label="Go to swap home"
+          >
             <div className={styles.brandRow}>
               <video
                 src="/sticker/excited.webm"
@@ -67,7 +75,7 @@ export default function Home() {
               />
             </div>
             <p className={styles.tagline}>Powered by Titan for the best prices on Solana</p>
-          </div>
+          </button>
         </div>
         <div className={styles.rightControls}>
           {connected ? (
@@ -94,6 +102,23 @@ export default function Home() {
             <div className={styles.menuWalletWrapper} onClick={closeMenu}>
               <WalletButton className={styles.menuWallet} />
             </div>
+            {connected ? (
+              <button
+                type="button"
+                className={styles.menuItem}
+                onClick={() => {
+                  closeMenu();
+                  router.push("/profile");
+                }}
+              >
+                <img
+                  src="/bank.svg"
+                  alt=""
+                  className={styles.menuIcon}
+                />
+                <span>PROFILE</span>
+              </button>
+            ) : null}
             <button
               type="button"
               className={styles.menuItem}
@@ -105,7 +130,7 @@ export default function Home() {
               <img
                 src="/trophy.svg"
                 alt=""
-                className={`${styles.menuIcon} ${styles.pixelIcon}`}
+                className={`${styles.menuIcon} ${styles.pixelIcon} ${styles.trophyIcon}`}
               />
               <span>LEADERBOARD</span>
             </button>
