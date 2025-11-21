@@ -270,8 +270,9 @@ export default function ProfilePage() {
   };
 
   const hasProfile = Boolean(profileData);
-  const createdAt = hasProfile
-    ? normalizeTimestamp(profileData.profile.createdAt)
+  const profileRecord = profileData?.profile;
+  const createdAt = profileRecord
+    ? normalizeTimestamp(profileRecord.createdAt)
     : null;
 
   const bioMatches =
