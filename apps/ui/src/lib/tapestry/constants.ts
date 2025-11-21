@@ -1,0 +1,11 @@
+export const BUSINESS_FROG_COLLECTION =
+  "J7rxtKmEpNJEtrfkagiTF1gsmLyVus6BQZFY4ouBkeMG";
+
+export const DEFAULT_NFT_COLLECTION =
+  process.env.NEXT_PUBLIC_NFT_COLLECTION_ADDRESS ??
+  process.env.NFT_COLLECTION_ADDRESS ??
+  BUSINESS_FROG_COLLECTION;
+
+export const DEFAULT_NFT_PAGE_SIZE = 4;
+
+export const DEFAULT_INCLUDE_COMPRESSED = false;
