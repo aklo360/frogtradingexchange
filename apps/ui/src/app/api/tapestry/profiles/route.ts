@@ -373,20 +373,20 @@ export async function GET(request: NextRequest) {
           walletForData
             ? getWalletNfts({
                 ownerAddress: walletForData,
-                page: resolvedNftPage,
-                limit: resolvedNftLimit,
+                page: 1,
+                limit: 1000,
                 collectionAddress: resolvedCollection,
                 includeCompressed,
               }).catch(() => ({
                 items: [],
-                page: resolvedNftPage,
-                limit: resolvedNftLimit,
+                page: 1,
+                limit: 1000,
                 total: 0,
               }))
             : Promise.resolve({
                 items: [],
-                page: resolvedNftPage,
-                limit: resolvedNftLimit,
+                page: 1,
+                limit: 1000,
                 total: 0,
               }),
         ]);
@@ -499,20 +499,20 @@ export async function GET(request: NextRequest) {
       walletForData
         ? getWalletNfts({
             ownerAddress: walletForData,
-            page: resolvedNftPage,
-            limit: resolvedNftLimit,
+            page: 1,
+            limit: 1000,
             collectionAddress: resolvedCollection,
             includeCompressed,
           }).catch(() => ({
             items: [],
-            page: resolvedNftPage,
-            limit: resolvedNftLimit,
+            page: 1,
+            limit: 1000,
             total: 0,
           }))
         : Promise.resolve({
             items: [],
-            page: resolvedNftPage,
-            limit: resolvedNftLimit,
+            page: 1,
+            limit: 1000,
             total: 0,
           }),
     ]);
