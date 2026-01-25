@@ -1,0 +1,21 @@
+{
+  "name": "Frog Trading Exchange",
+  "short_name": "FrogX",
+  "description": "Titan-powered Solana DEX swap made by and for the Solana Business Frogs. 100% of platform fees are used to automatically buy back & burn frogs.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#08021e",
+  "theme_color": "#08021e",
+  "icons": [
+    {
+      "src": "/android-chrome-192x192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/android-chrome-512x512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ]
+}
