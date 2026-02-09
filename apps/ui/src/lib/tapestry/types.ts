@@ -5,6 +5,7 @@ export type TapestryProfile = {
   username: string;
   bio?: string | null;
   image?: string | null;
+  properties?: Array<{ key: string; value: string }>;
 };
 
 export type AppProfile = {
@@ -14,6 +15,7 @@ export type AppProfile = {
   username: string;
   bio?: string | null;
   image?: string | null;
+  properties?: Array<{ key: string; value: string }>;
 };
 
 export type TapestryWallet = {
@@ -187,6 +189,8 @@ export type AppProfileResponse = {
   walletAddress?: string;
   namespace?: TapestryNamespaceMetadata;
   contact?: TapestryContact;
+  pfpMint?: string | null;
+  pfpImage?: string | null;
   hashedPhoneNumber?: string;
   identities?: TapestryIdentityProfile[];
   operation?: "CREATED" | "FOUND";

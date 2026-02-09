@@ -37,7 +37,6 @@ import { DEFAULT_TOKEN_MAP } from "@/lib/tokens";
 import {
   DEFAULT_INCLUDE_COMPRESSED,
   DEFAULT_NFT_COLLECTION,
-  DEFAULT_NFT_PAGE_SIZE,
 } from "@/lib/tapestry/constants";
 
 const INVALID_REQUEST = NextResponse.json(
@@ -50,6 +49,76 @@ const NOT_FOUND = NextResponse.json(
   { status: 404 },
 );
 
+/**
+ * SECURITY: Validate origin header for CSRF protection
+ * Only allows requests from same origin or allowed origins
+ */
+const isValidOrigin = (request: NextRequest): boolean => {
+  const origin = request.headers.get("origin");
+  const host = request.headers.get("host");
+
+  // Allow same-origin requests
+  if (!origin) {
+    // No origin header typically means same-origin request
+    return true;
+  }
+
+  try {
+    const originUrl = new URL(origin);
+    // Check if origin matches host
+    if (host && originUrl.host === host) {
+      return true;
+    }
+    // Allow localhost in development
+    if (process.env.NODE_ENV === "development" && originUrl.hostname === "localhost") {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
+};
+
+/**
+ * SECURITY: Validate Solana address format
+ */
+const isValidSolanaAddress = (address: string | undefined): boolean => {
+  if (!address) return false;
+  // Solana addresses are base58 encoded, 32-44 characters
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address);
+};
+
+/**
+ * SECURITY: Validate username format
+ */
+const isValidUsername = (username: string | undefined): boolean => {
+  if (!username) return false;
+  // Username: 1-50 chars, alphanumeric, underscores, hyphens
+  return /^[a-zA-Z0-9_-]{1,50}$/.test(username);
+};
+
+/**
+ * SECURITY: Validate bio length
+ */
+const isValidBio = (bio: string | null | undefined): boolean => {
+  if (!bio) return true;
+  return bio.length <= 500;
+};
+
+/**
+ * SECURITY: Validate image URL
+ */
+const isValidImageUrl = (url: string | null | undefined): boolean => {
+  if (!url) return true;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+};
+
 
 type ProfileResponsePayload = AppProfileResponse;
 
@@ -60,6 +129,7 @@ const normalizeProfile = (profile: {
   username: string;
   bio?: string | null;
   image?: string | null;
+  properties?: Array<{ key: string; value: string }>;
 }): AppProfile => ({
   id: profile.id,
   namespace: profile.namespace,
@@ -67,7 +137,17 @@ const normalizeProfile = (profile: {
   username: profile.username,
   bio: profile.bio ?? undefined,
   image: profile.image ?? undefined,
+  properties: profile.properties ?? undefined,
 });
+
+const getPfpFromProfile = (profile: {
+  properties?: Array<{ key: string; value: string }>;
+}) => {
+  const props = profile.properties ?? [];
+  const mint = props.find((p) => p.key === "pfp_mint")?.value ?? null;
+  const image = props.find((p) => p.key === "pfp_image")?.value ?? null;
+  return { mint, image };
+};
 
 const normalizeSocialProfile = (
   profile: SocialProfileSummary,
@@ -87,6 +167,8 @@ type BuildPayloadArgs = {
   identities?: TapestryIdentityProfile[];
   fallbackWallet?: string;
   operation?: "CREATED" | "FOUND";
+  pfpMint?: string | null;
+  pfpImage?: string | null;
   followers?: {
     profiles: SocialProfileSummary[];
     total: number;
@@ -129,6 +211,8 @@ function buildProfilePayload({
   tokenSummary,
   contents,
   nfts,
+  pfpMint,
+  pfpImage,
 }: BuildPayloadArgs): ProfileResponsePayload {
   const resolvedIdentity =
     selectedIdentity ??
@@ -210,6 +294,9 @@ function buildProfilePayload({
   if (nfts) {
     payload.nfts = nfts;
   }
+
+  payload.pfpMint = pfpMint ?? null;
+  payload.pfpImage = pfpImage ?? null;
 
   return payload;
 }
@@ -309,16 +396,6 @@ export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const walletAddress = url.searchParams.get("walletAddress");
   const profileId = url.searchParams.get("profileId");
-  const nftPage = Number(url.searchParams.get("nftPage") ?? "1");
-  const nftLimit = Number(
-    url.searchParams.get("nftLimit") ?? String(DEFAULT_NFT_PAGE_SIZE),
-  );
-  const resolvedNftPage =
-    Number.isFinite(nftPage) && nftPage > 0 ? nftPage : 1;
-  const resolvedNftLimit =
-    Number.isFinite(nftLimit) && nftLimit > 0 && nftLimit <= 100
-      ? nftLimit
-      : DEFAULT_NFT_PAGE_SIZE;
   const collectionParam = url.searchParams.get("nftCollection");
   const resolvedCollection =
     collectionParam === "all"
@@ -394,6 +471,12 @@ export async function GET(request: NextRequest) {
         const tradeHistoryLimited = tradeHistory.slice(0, 20);
         const tokenSummary = summarizeTrades(tradeHistoryLimited);
 
+        const pfpProps = getPfpFromProfile(details.profile);
+        const ownedMints = new Set(nftRes.items.map((item) => item.id));
+        const pfpMint =
+          pfpProps.mint && ownedMints.has(pfpProps.mint) ? pfpProps.mint : null;
+        const pfpImage = pfpMint ? pfpProps.image ?? details.profile.image ?? null : null;
+
         const payload = buildProfilePayload({
           details,
           selectedIdentity,
@@ -418,6 +501,8 @@ export async function GET(request: NextRequest) {
             total: contents.total,
           },
           nfts: nftRes,
+          pfpMint,
+          pfpImage,
         });
 
         return NextResponse.json(payload);
@@ -519,6 +604,15 @@ export async function GET(request: NextRequest) {
 
     const tradeHistoryLimited = tradeHistory.slice(0, 20);
     const tokenSummary = summarizeTrades(tradeHistoryLimited);
+    const pfpProps = details?.profile
+      ? getPfpFromProfile(details.profile)
+      : { mint: null, image: null };
+    const ownedMints = new Set(nftRes.items.map((item) => item.id));
+    const pfpMint =
+      pfpProps.mint && ownedMints.has(pfpProps.mint) ? pfpProps.mint : null;
+    const pfpImage = pfpMint
+      ? pfpProps.image ?? details?.profile.image ?? null
+      : null;
 
     const payload = buildProfilePayload({
       details,
@@ -544,6 +638,8 @@ export async function GET(request: NextRequest) {
         total: contents.total,
       },
       nfts: nftRes,
+      pfpMint,
+      pfpImage,
     });
 
     return NextResponse.json(payload);
@@ -575,6 +671,20 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  // SECURITY: CSRF protection - validate origin
+  if (!isValidOrigin(request)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // SECURITY: Validate Content-Type header
+  const contentType = request.headers.get("content-type");
+  if (!contentType?.includes("application/json")) {
+    return NextResponse.json(
+      { error: "Content-Type must be application/json" },
+      { status: 415 }
+    );
+  }
+
   let body: {
     username?: string;
     walletAddress?: string;
@@ -582,6 +692,8 @@ export async function POST(request: NextRequest) {
     image?: string | null;
     profileId?: string;
     referredById?: string;
+    pfpMint?: string | null;
+    pfpImage?: string | null;
   };
 
   try {
@@ -590,18 +702,74 @@ export async function POST(request: NextRequest) {
     return INVALID_REQUEST;
   }
 
-  if (!body.username) {
-    return INVALID_REQUEST;
+  // SECURITY: Input validation
+  if (!isValidUsername(body.username)) {
+    return NextResponse.json(
+      { error: "Invalid username format (1-50 alphanumeric characters, underscores, hyphens)" },
+      { status: 400 }
+    );
+  }
+
+  if (body.walletAddress && !isValidSolanaAddress(body.walletAddress)) {
+    return NextResponse.json(
+      { error: "Invalid wallet address format" },
+      { status: 400 }
+    );
+  }
+
+  if (!isValidBio(body.bio)) {
+    return NextResponse.json(
+      { error: "Bio must be 500 characters or less" },
+      { status: 400 }
+    );
+  }
+
+  if (!isValidImageUrl(body.image) || !isValidImageUrl(body.pfpImage)) {
+    return NextResponse.json(
+      { error: "Invalid image URL format" },
+      { status: 400 }
+    );
   }
 
   try {
+    // Validate PFP ownership if provided
+    const pfpMint: string | null = body.pfpMint ?? null;
+    let pfpImage: string | null = body.pfpImage ?? null;
+    if (pfpMint) {
+      const nftCheck = await getWalletNfts({
+        ownerAddress: body.walletAddress ?? "",
+        page: 1,
+        limit: 1000,
+        collectionAddress: null,
+        includeCompressed: DEFAULT_INCLUDE_COMPRESSED,
+      });
+      const owns = nftCheck.items.some((item) => item.id === pfpMint);
+      if (!owns) {
+        return NextResponse.json(
+          { error: "PFP mint not owned by wallet" },
+          { status: 400 },
+        );
+      }
+      if (!pfpImage) {
+        const match = nftCheck.items.find((item) => item.id === pfpMint);
+        pfpImage = match?.image ?? null;
+      }
+    }
+
+    // username is guaranteed to be defined after validation above
     const result = await findOrCreateProfile({
-      username: body.username,
+      username: body.username!,
       walletAddress: body.walletAddress,
       bio: body.bio,
-      image: body.image,
+      image: pfpImage ?? body.image,
       profileId: body.profileId,
       referredById: body.referredById,
+      properties: pfpMint
+        ? [
+            { key: "pfp_mint", value: pfpMint },
+            ...(pfpImage ? [{ key: "pfp_image", value: pfpImage }] : []),
+          ]
+        : undefined,
     });
 
     const details = await getProfileDetails(result.profile.id);
@@ -619,52 +787,57 @@ export async function POST(request: NextRequest) {
       ]);
     }
 
-    const selectedIdentity = appProfiles?.find(
-      (entry) => entry.profile.id === details.profile.id,
-    );
+  const selectedIdentity = appProfiles?.find(
+    (entry) => entry.profile.id === details.profile.id,
+  );
 
-    const [
-      followersRes,
-      followingRes,
-      walletsRes,
-      walletSocialCounts,
-      activity,
-      swapActivity,
-      tradeHistory,
-      contents,
-      nftRes,
-    ] = await Promise.all([
-      getProfileFollowers(details.profile.id, { pageSize: 12 }),
-      getProfileFollowing(details.profile.id, { pageSize: 12 }),
-      getProfileWallets(details.profile.id),
-      walletToQuery ? getWalletSocialCounts(walletToQuery) : Promise.resolve(null),
+  const [
+    followersRes,
+    followingRes,
+    walletsRes,
+    walletSocialCounts,
+    activity,
+    swapActivity,
+    tradeHistory,
+    contents,
+  ] = await Promise.all([
+    getProfileFollowers(details.profile.id, { pageSize: 12 }),
+    getProfileFollowing(details.profile.id, { pageSize: 12 }),
+    getProfileWallets(details.profile.id),
+    walletToQuery ? getWalletSocialCounts(walletToQuery) : Promise.resolve(null),
       getActivityFeed(details.profile.username, { pageSize: 25 }),
       getSwapActivity(details.profile.username, { pageSize: 10 }),
       walletToQuery ? getTradeHistory(walletToQuery, { limit: 50 }) : Promise.resolve<TradeHistoryEntry[]>([]),
       getProfileContents(details.profile.id, { pageSize: 12 }),
+    ]);
+
+    const nftRes =
       walletToQuery
-        ? getWalletNfts({
+        ? await getWalletNfts({
             ownerAddress: walletToQuery,
             page: 1,
-            limit: DEFAULT_NFT_PAGE_SIZE,
+            limit: 1000,
             collectionAddress: DEFAULT_NFT_COLLECTION,
             includeCompressed: DEFAULT_INCLUDE_COMPRESSED,
           }).catch(() => ({
             items: [],
             page: 1,
-            limit: DEFAULT_NFT_PAGE_SIZE,
+            limit: 1000,
             total: 0,
           }))
-        : Promise.resolve({
-            items: [],
-            page: 1,
-            limit: DEFAULT_NFT_PAGE_SIZE,
-            total: 0,
-          }),
-    ]);
+        : { items: [], page: 1, limit: 1000, total: 0 };
 
     const tradeHistoryLimited = tradeHistory.slice(0, 20);
     const tokenSummary = summarizeTrades(tradeHistoryLimited);
+    const pfpProps = details.profile
+      ? getPfpFromProfile(details.profile)
+      : { mint: null, image: null };
+    const ownedMints = new Set(nftRes.items.map((item) => item.id));
+    const resolvedPfpMint =
+      pfpProps.mint && ownedMints.has(pfpProps.mint) ? pfpProps.mint : null;
+    const resolvedPfpImage = resolvedPfpMint
+      ? pfpProps.image ?? details.profile.image ?? null
+      : null;
 
     const payload = buildProfilePayload({
       details,
@@ -691,6 +864,8 @@ export async function POST(request: NextRequest) {
         total: contents.total,
       },
       nfts: nftRes,
+      pfpMint: resolvedPfpMint,
+      pfpImage: resolvedPfpImage,
     });
 
     return NextResponse.json(payload);

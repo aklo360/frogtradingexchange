@@ -45,6 +45,37 @@ export type Env = {
   PLATFORM_FEE_SOL_ACCOUNT?: string;
   PLATFORM_FEE_USDC_ACCOUNT?: string;
   PLATFORM_FEE_USDT_ACCOUNT?: string;
+  BUYBACK_ENABLED?: string;
+  BUYBACK_DRY_RUN?: string;
+  BUYBACK_BURN_ENABLED?: string;
+  BUYBACK_WALLET_SECRET?: string;
+  BUYBACK_WALLET_ADDRESS?: string;
+  BUYBACK_SOL_RESERVE?: string;
+  BUYBACK_MIN_SWAP_USDC?: string;
+  BUYBACK_MIN_SWAP_USDT?: string;
+  BUYBACK_TOKEN_RESERVE_USDC?: string;
+  BUYBACK_TOKEN_RESERVE_USDT?: string;
+  BUYBACK_TOKEN_RESERVE_WSOL?: string;
+  BUYBACK_SWAP_SLIPPAGE_BPS?: string;
+  BUYBACK_PRIORITY_FEE?: string;
+  BUYBACK_TRIGGER_TOKEN?: string;
+  ME_API_BASE_URL?: string;
+  ME_API_KEY?: string;
+  ME_API_KEY_HEADER?: string;
+  ME_API_KEY_PREFIX?: string;
+  ME_COLLECTION_SYMBOL?: string;
+  ME_STATS_PATH?: string;
+  ME_LISTINGS_PATH?: string;
+  ME_LISTINGS_QUERY?: string;
+  ME_BUY_NOW_PATH?: string;
+  ME_BUY_NOW_METHOD?: string;
+  ME_FLOOR_PRICE_UNIT?: string;
+  SOL_INCINERATOR_API_URL?: string;
+  SOL_INCINERATOR_API_KEY?: string;
+  SOL_INCINERATOR_API_KEY_HEADER?: string;
+  SOL_INCINERATOR_API_KEY_PREFIX?: string;
+  SOL_INCINERATOR_BURN_PATH?: string;
+  SOL_INCINERATOR_BURN_METHOD?: string;
 };
 
 export type TitanConfig = {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import styles from "@/app/page.module.css";
 import { DEFAULT_TOKEN_OPTIONS } from "@/lib/tokens";
 
@@ -49,6 +49,10 @@ const pickPriceChange = (token: JupiterTokenResponse): number | null => {
 
 export const Ticker = () => {
   const [entries, setEntries] = useState<TickerEntry[]>([]);
+  const [repeatCount, setRepeatCount] = useState(1);
+  const [durationSeconds, setDurationSeconds] = useState(28);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const measureRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -106,8 +110,59 @@ export const Ticker = () => {
     return entries;
   }, [entries]);
 
-  const renderItems = (items: TickerEntry[]) =>
-    items.map((item) => {
+  useEffect(() => {
+    const container = containerRef.current;
+    const measure = measureRef.current;
+    if (!container || !measure) return;
+
+    let frame: number | null = null;
+
+    const update = () => {
+      if (frame !== null) {
+        cancelAnimationFrame(frame);
+      }
+      frame = requestAnimationFrame(() => {
+        const containerWidth = container.offsetWidth;
+        const contentWidth = measure.scrollWidth;
+        if (!containerWidth || !contentWidth) return;
+
+        const nextRepeat = Math.max(1, Math.ceil(containerWidth / contentWidth));
+        setRepeatCount((prev) => (prev === nextRepeat ? prev : nextRepeat));
+
+        const sequenceWidth = contentWidth * nextRepeat;
+        const pixelsPerSecond = 35;
+        const nextDuration = Math.max(
+          18,
+          Math.round((sequenceWidth / pixelsPerSecond) * 10) / 10,
+        );
+        setDurationSeconds((prev) =>
+          prev === nextDuration ? prev : nextDuration,
+        );
+      });
+    };
+
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(container);
+    observer.observe(measure);
+
+    return () => {
+      observer.disconnect();
+      if (frame !== null) cancelAnimationFrame(frame);
+    };
+  }, [displayEntries]);
+
+  const sequenceEntries = useMemo(() => {
+    if (repeatCount <= 1) return displayEntries;
+    const repeated: TickerEntry[] = [];
+    for (let i = 0; i < repeatCount; i += 1) {
+      repeated.push(...displayEntries);
+    }
+    return repeated;
+  }, [displayEntries, repeatCount]);
+
+  const renderItems = (items: TickerEntry[], keyPrefix: string) =>
+    items.map((item, index) => {
       const price = Number.isFinite(item.priceChangePct)
         ? item.priceChangePct
         : 0;
@@ -117,7 +172,7 @@ export const Ticker = () => {
 
       return (
         <span
-          key={`${item.id}-${sign}${formatted}`}
+          key={`${keyPrefix}-${item.id}-${index}-${sign}${formatted}`}
           className={`${styles.tickerItem} ${
             isPositive ? styles.tickerPositive : styles.tickerNegative
           }`}
@@ -129,11 +184,27 @@ export const Ticker = () => {
     });
 
   return (
-    <div className={styles.tickerBar} aria-label="Top Solana tokens by organic score">
+    <div
+      className={styles.tickerBar}
+      ref={containerRef}
+      style={{ "--ticker-duration": `${durationSeconds}s` } as CSSProperties}
+      aria-label="Top Solana tokens by organic score"
+    >
       <div className={styles.tickerTrack}>
-        <div className={styles.tickerContent}>{renderItems(displayEntries)}</div>
+        <div className={styles.tickerContent}>
+          {renderItems(sequenceEntries, "a")}
+        </div>
         <div className={styles.tickerContent} aria-hidden="true">
-          {renderItems(displayEntries)}
+          {renderItems(sequenceEntries, "b")}
+        </div>
+      </div>
+      <div
+        className={`${styles.tickerTrack} ${styles.tickerMeasure}`}
+        ref={measureRef}
+        aria-hidden="true"
+      >
+        <div className={styles.tickerContent}>
+          {renderItems(displayEntries, "m")}
         </div>
       </div>
     </div>

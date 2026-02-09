@@ -5,6 +5,12 @@ import {
   resolvePlatformFee,
 } from "./fees";
 import {
+  burnBuybackAsset,
+  getBuybackStatus,
+  isAuthorizedBuybackTrigger,
+  runBuyback,
+} from "./buyback";
+import {
   fetchBestQuote,
   resolveHttpUrl,
   type QuoteRequest,
@@ -45,20 +51,66 @@ export async function getInfo(env: Env): Promise<Response> {
   });
 }
 
+export async function getBuyback(env: Env): Promise<Response> {
+  const status = await getBuybackStatus(env);
+  // IMPORTANT: Disable caching so floor price is always fresh
+  return json(status, {
+    headers: {
+      "Cache-Control": "no-cache, no-store, must-revalidate",
+      "Pragma": "no-cache",
+      "Expires": "0",
+    },
+  });
+}
+
+export async function postBuybackExecute(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  if (!isAuthorizedBuybackTrigger(request, env)) {
+    return json({ error: "Unauthorized" }, { status: 401 });
+  }
+  try {
+    await runBuyback(env);
+    return json({ ok: true });
+  } catch (error) {
+    // SECURITY: Log details server-side, return generic message to client
+    console.error("[buyback] Execute failed:", error);
+    return json({ error: "Buyback operation failed" }, { status: 500 });
+  }
+}
+
+export async function postBuybackBurn(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  if (!isAuthorizedBuybackTrigger(request, env)) {
+    return json({ error: "Unauthorized" }, { status: 401 });
+  }
+  let mint: string | undefined;
+  try {
+    const body = (await request.json()) as { mint?: string };
+    mint = body?.mint;
+  } catch {
+    mint = undefined;
+  }
+  try {
+    const result = await burnBuybackAsset(env, mint);
+    return json({ ok: true, ...result });
+  } catch (error) {
+    // SECURITY: Log details server-side, return generic message to client
+    console.error("[buyback] Burn failed:", error);
+    return json({ error: "Burn operation failed" }, { status: 500 });
+  }
+}
+
 export async function postQuotes(request: Request, env: Env): Promise<Response> {
   const config = getTitanConfig(env);
   const feeConfig = getPlatformFeeConfig(env);
-  if (feeConfig.enabled) {
+  // SECURITY: Only log config in development, not production
+  if (feeConfig.enabled && config.httpBaseUrl?.includes("demo")) {
     debugPlatformConfig(feeConfig);
   }
-  console.log(
-    "Titan quote request config",
-    JSON.stringify({
-      hasToken: Boolean(config.token),
-      wsUrl: config.wsUrl,
-      regions: config.preferredRegions,
-    }),
-  );
   let body: Partial<QuoteRequest> = {};
   try {
     body = (await request.json()) as Partial<QuoteRequest>;
@@ -104,14 +156,9 @@ export async function postQuotes(request: Request, env: Env): Promise<Response> 
     );
     return json(quote);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return json(
-      {
-        error: "Quote stream unavailable",
-        details: message,
-      },
-      { status: 502 },
-    );
+    // SECURITY: Log details server-side, return generic message to client
+    console.error("[quotes] Failed to fetch quote:", error);
+    return json({ error: "Quote service temporarily unavailable" }, { status: 502 });
   }
 }
 
@@ -130,17 +177,10 @@ type SwapBuildPayload = {
 export async function postSwap(request: Request, env: Env): Promise<Response> {
   const config = getTitanConfig(env);
   const feeConfig = getPlatformFeeConfig(env);
-  if (feeConfig.enabled) {
+  // SECURITY: Only log config in development, not production
+  if (feeConfig.enabled && config.httpBaseUrl?.includes("demo")) {
     debugPlatformConfig(feeConfig);
   }
-  console.log(
-    "Titan swap request config",
-    JSON.stringify({
-      hasToken: Boolean(config.token),
-      baseUrl: config.httpBaseUrl,
-      region: config.preferredRegions[0],
-    }),
-  );
   let payload: SwapBuildPayload;
   try {
     payload = (await request.json()) as SwapBuildPayload;
@@ -193,11 +233,10 @@ export async function postSwap(request: Request, env: Env): Promise<Response> {
   });
 
   if (!response.ok) {
+    // SECURITY: Log details server-side, return generic message to client
     const text = await response.text();
-    return json(
-      { error: "Swap builder unavailable", details: text || undefined },
-      { status: 502 },
-    );
+    console.error("[swap] Upstream error:", response.status, text);
+    return json({ error: "Swap service temporarily unavailable" }, { status: 502 });
   }
 
   const data = (await response.json()) as {

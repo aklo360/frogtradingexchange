@@ -11,7 +11,7 @@ import type {
 } from "@/lib/tapestry/types";
 import { tapestryConfig } from "@/server/env";
 
-const { apiKey, baseUrl, namespace } = tapestryConfig;
+const { apiKey, baseUrl } = tapestryConfig;
 
 type HttpMethod = "GET" | "POST";
 
@@ -45,6 +45,8 @@ async function tapestryFetch<T>(
   const relativePath = path.startsWith("/") ? path.slice(1) : path;
   const url = new URL(relativePath, normalizedBase);
 
+  // SECURITY: Add API key to query params and Authorization header
+  // Some Tapestry endpoints require apiKey in URL, others accept header
   url.searchParams.set("apiKey", apiKey);
 
   if (searchParams) {
@@ -54,14 +56,17 @@ async function tapestryFetch<T>(
     });
   }
 
+  // Build headers with Authorization
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${apiKey}`,
+  };
+  if (method === "POST") {
+    headers["Content-Type"] = "application/json";
+  }
+
   const response = await fetch(url.toString(), {
     method,
-    headers:
-      method === "POST"
-        ? {
-            "Content-Type": "application/json",
-          }
-        : undefined,
+    headers,
     body: method === "POST" ? JSON.stringify(body) : undefined,
     // Avoid caching responses across users
     cache: "no-store",
@@ -124,6 +129,7 @@ export type FindOrCreateProfileInput = {
   image?: string | null;
   profileId?: string;
   referredById?: string;
+  properties?: Array<{ key: string; value: string }>;
 };
 
 export type FindOrCreateProfileResult = {
@@ -160,14 +166,18 @@ export async function findOrCreateProfile(
     payload.referredById = input.referredById;
   }
 
-  if (namespace) {
-    // Using namespace as a custom property helps when debugging in the dashboard.
-    payload.properties = [
-      {
-        key: "namespace",
-        value: namespace,
-      },
-    ];
+  const properties: Array<{ key: string; value: string }> = [];
+
+  if (input.properties && input.properties.length > 0) {
+    for (const prop of input.properties) {
+      if (prop.key && prop.value !== undefined) {
+        properties.push({ key: prop.key, value: String(prop.value) });
+      }
+    }
+  }
+
+  if (properties.length > 0) {
+    payload.properties = properties;
   }
 
   const data = await tapestryFetch<{
@@ -186,18 +196,7 @@ export function pickAppProfile(
   identities: TapestryIdentityProfile[],
 ): TapestryIdentityProfile | undefined {
   if (!identities.length) return undefined;
-
-  if (!namespace) {
-    return identities[0];
-  }
-
-  return (
-    identities.find(
-      (entry) =>
-        entry.profile.namespace === namespace ||
-        entry.namespace?.name === namespace,
-    ) ?? identities[0]
-  );
+  return identities[0];
 }
 
 type FollowersApiResponse = {

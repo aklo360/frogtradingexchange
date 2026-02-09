@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { WalletButton } from "@/components/WalletButton";
 import { Ticker } from "@/components/Ticker";
 import { useAudio } from "@/providers/AudioProvider";
+import { isV1 } from "@/lib/version";
 import { useWallet } from "@solana/wallet-adapter-react";
 import homeStyles from "../page.module.css";
 import styles from "./leaderboard.module.css";
@@ -78,6 +79,11 @@ export default function LeaderboardPage() {
   }, [menuOpen]);
 
   useEffect(() => {
+    if (!isV1) return;
+    router.replace("/");
+  }, [router, isV1]);
+
+  useEffect(() => {
     if (visibleCount >= rows.length) return undefined;
     const sentinel = sentinelRef.current;
     if (!sentinel) return undefined;
@@ -94,6 +100,10 @@ export default function LeaderboardPage() {
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, [rows.length, visibleCount]);
+
+  if (isV1) {
+    return null;
+  }
 
   return (
     <main className={homeStyles.main}>
@@ -133,7 +143,7 @@ export default function LeaderboardPage() {
           </div>
         </div>
         <div className={homeStyles.rightControls}>
-          {connected ? (
+          {connected && !isV1 ? (
             <div className={homeStyles.xpChip} aria-label="Your XP">
               <span className={homeStyles.xpValue}>4,269 XP</span>
               <img src="/sparkle.svg" alt="" className={homeStyles.sparkleIcon} />
@@ -159,7 +169,7 @@ export default function LeaderboardPage() {
             <div className={homeStyles.menuWalletWrapper} onClick={closeMenu}>
               <WalletButton className={homeStyles.menuWallet} />
             </div>
-            {connected ? (
+            {connected && !isV1 ? (
               <button
                 type="button"
                 className={homeStyles.menuItem}
@@ -199,14 +209,18 @@ export default function LeaderboardPage() {
               />
               <span>{muted ? "UNMUTE" : "MUTE"}</span>
             </button>
-            <button type="button" className={homeStyles.menuItem} onClick={closeMenu}>
-              <img src="/info.svg" alt="" className={homeStyles.menuIcon} />
-              <span>HELP</span>
-            </button>
-            <button type="button" className={homeStyles.menuItem} onClick={closeMenu}>
-              <img src="/chat.svg" alt="" className={homeStyles.menuIcon} />
-              <span>CHAT</span>
-            </button>
+            {!isV1 ? (
+              <>
+                <button type="button" className={homeStyles.menuItem} onClick={closeMenu}>
+                  <img src="/info.svg" alt="" className={homeStyles.menuIcon} />
+                  <span>HELP</span>
+                </button>
+                <button type="button" className={homeStyles.menuItem} onClick={closeMenu}>
+                  <img src="/chat.svg" alt="" className={homeStyles.menuIcon} />
+                  <span>CHAT</span>
+                </button>
+              </>
+            ) : null}
           </nav>
         </div>
         {menuOpen ? (

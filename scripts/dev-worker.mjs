@@ -41,7 +41,15 @@ for (const candidate of envFiles) {
   }
 }
 
-const forwardPrefixes = ["TITAN_", "SOLANA_", "QUOTE_", "PLATFORM_FEE_"];
+const forwardPrefixes = [
+  "TITAN_",
+  "SOLANA_",
+  "QUOTE_",
+  "PLATFORM_FEE_",
+  "BUYBACK_",
+  "ME_",
+  "SOL_INCINERATOR_",
+];
 
 const varArgs = [];
 for (const [key, value] of Object.entries(process.env)) {
@@ -50,7 +58,7 @@ for (const [key, value] of Object.entries(process.env)) {
     continue;
   }
   varArgs.push("--var");
-  varArgs.push(`${key}=${value}`);
+  varArgs.push(`${key}:${value}`);
 }
 
 const port = process.env.WORKER_PORT ?? "8787";

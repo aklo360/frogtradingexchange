@@ -82,8 +82,14 @@ pnpm dev                   # start Next.js (3000) + worker (8787)
 - **Pages secrets** (`frogx-ui` project): `wrangler pages secret put <KEY> --project-name frogx-ui`
   - `SOLANA_RPC_URL` — private Helius RPC (used by `/rpc` proxy)
   - Optional: `API_ORIGIN` to point `/api/*` to a different worker base URL
+- **UI build flag**:
+  - `NEXT_PUBLIC_FROGX_VERSION` = `v1` (swap-only + buyback burn bar) or `v2` (full profile/leaderboard build)
 - UI **does not** need `NEXT_PUBLIC_SOLANA_RPC_URL` if you rely on `/rpc` proxy.
 - Platform fees (currently disabled by default): flip `PLATFORM_FEE_ENABLED=true` when Titan enables fee management for our token, then set `PLATFORM_FEE_BPS`, `PLATFORM_FEE_RECIPIENT`, and optional `PLATFORM_FEE_{TOKEN}_ACCOUNT` env vars to direct SOL/USDC/USDT fees to specific ATAs.
+- **Buyback automation (Worker secrets)**:
+  - `BUYBACK_ENABLED`, `BUYBACK_DRY_RUN`, `BUYBACK_WALLET_SECRET`, `BUYBACK_WALLET_ADDRESS`
+  - `BUYBACK_SOL_RESERVE`, `BUYBACK_MIN_SWAP_USDC`, `BUYBACK_MIN_SWAP_USDT`, `BUYBACK_SWAP_SLIPPAGE_BPS`, `BUYBACK_PRIORITY_FEE`
+  - `ME_API_*` (Magic Eden creds + endpoints) and `SOL_INCINERATOR_*` (burn API creds + endpoints)
 
 ## 4. Commands
 
@@ -119,6 +125,7 @@ pnpm dev                   # start Next.js (3000) + worker (8787)
 ### Frontend modules
 
 - **`SwapCard`**: Wallet-aware Titan swap surface. Streams quote previews via `/api/frogx/quotes`, handles balance polling (native SOL vs SPL), assembles transactions (lookup tables) and submits via wallet adapter. Includes Titan router insights and USDC estimates, with a compact mobile layout that keeps Swap/Disconnect headers aligned and trims vertical padding across sections. XP badge (4,269 XP) renders in the header when a wallet is connected.
+- **`BuybackProgress`** (V1-only): Polls `/api/frogx/buyback` to show fees collected vs SBF floor price; once full, the Worker buys the lowest SBF listing and burns via Sol Incinerator.
 - **`TokenSelector`**: Jupiter-style modal picker with verified suggestions (organic score ≥93), search across symbol/name/mint, arbitrary mint support (falls back to on-chain mint decimals), and sponsor slots (ROCK, zenBTC, SSE) injected via `featured` metadata.
 - **`Ticker`**: Header marquee listing top verified tokens (organic score ≥93) from Jupiter, showing the **6‑hour** price change. Refreshes every 60s and gracefully degrades to curated defaults.
 - **`Leaderboard`** (`/leaderboard`): Displays 100 mock Ribbit XP rows (lazy-loaded 20 at a time). Top 3 rows glow gold/silver/bronze with matching avatar halos. Uses same header + audio context as home.

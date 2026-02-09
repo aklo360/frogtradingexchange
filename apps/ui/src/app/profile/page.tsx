@@ -6,6 +6,7 @@ import { WalletButton } from "@/components/WalletButton";
 import { Ticker } from "@/components/Ticker";
 import { useAudio } from "@/providers/AudioProvider";
 import { useWallet } from "@solana/wallet-adapter-react";
+import { isV1 } from "@/lib/version";
 import type { AppProfileResponse } from "@/lib/tapestry/types";
 import {
   DEFAULT_INCLUDE_COMPRESSED,
@@ -20,6 +21,25 @@ const NFT_PAGE_SIZE = 8;
 
 const deriveDefaultUsername = (address: string) =>
   `frog-${address.slice(0, 4)}${address.slice(-2)}`.toLowerCase();
+
+/**
+ * SECURITY: Sanitize URL for use in CSS background-image
+ * Prevents CSS injection attacks by validating URL format
+ */
+const sanitizeCssUrl = (url: string | null | undefined): string | null => {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    // Only allow http/https protocols
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return null;
+    }
+    // Encode any special CSS characters
+    return parsed.href.replace(/[()'"\\]/g, encodeURIComponent);
+  } catch {
+    return null;
+  }
+};
 
 const profileCache = new Map<string, AppProfileResponse>();
 
@@ -39,6 +59,9 @@ export default function ProfilePage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [nftPage, setNftPage] = useState(1);
+  const [selectingPfp, setSelectingPfp] = useState(false);
+  const [pfpSaving, setPfpSaving] = useState(false);
+  const [pfpError, setPfpError] = useState<string | null>(null);
 
   const toggleMenu = () => setMenuOpen((open) => !open);
   const closeMenu = () => setMenuOpen(false);
@@ -56,6 +79,11 @@ export default function ProfilePage() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [menuOpen]);
+
+  useEffect(() => {
+    if (!isV1) return;
+    router.replace("/");
+  }, [router, isV1]);
 
   useEffect(() => {
     setNftPage(1);
@@ -144,13 +172,15 @@ export default function ProfilePage() {
   const followingTotal =
     profileData?.following?.total ?? profileData?.socialCounts.following ?? 0;
   const profileRecord = profileData?.profile;
+  const pfpMint = profileData?.pfpMint ?? null;
+  const pfpImage = profileData?.pfpImage ?? null;
   const displayUsername =
     profileRecord?.username ??
     (walletAddress ? deriveDefaultUsername(walletAddress) : "Your frog handle");
   const displayBio =
     profileRecord?.bio ??
     "Add a bio to share your frog lore and trading style.";
-  const avatarUrl = profileRecord?.image ?? null;
+  const avatarUrl = pfpImage ?? profileRecord?.image ?? null;
   const allNfts = profileData?.nfts?.items ?? [];
   const totalFrogs = Math.min(profileData?.nfts?.total ?? allNfts.length, 999);
   const nftCurrentPage = nftPage;
@@ -185,6 +215,37 @@ export default function ProfilePage() {
   const handleLastNfts = () => {
     if (nftCurrentPage !== nftTotalPages) {
       setNftPage(nftTotalPages);
+    }
+  };
+
+  const handleSelectPfp = async (mint: string, image: string | null) => {
+    if (!walletAddress || !profileRecord) return;
+    setPfpSaving(true);
+    setPfpError(null);
+    try {
+      const response = await fetch("/api/tapestry/profiles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: profileRecord.username,
+          walletAddress,
+          profileId: profileRecord.id,
+          bio: profileRecord.bio ?? null,
+          pfpMint: mint,
+          pfpImage: image,
+        }),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `Failed with status ${response.status}`);
+      }
+      const data = (await response.json()) as AppProfileResponse;
+      setProfileData(data);
+      setSelectingPfp(false);
+    } catch (error) {
+      setPfpError((error as Error).message ?? "Failed to set PFP");
+    } finally {
+      setPfpSaving(false);
     }
   };
 
@@ -241,6 +302,10 @@ export default function ProfilePage() {
     return cleaned;
   };
 
+  if (isV1) {
+    return null;
+  }
+
   return (
     <main className={homeStyles.main}>
       <header className={homeStyles.headerBar}>
@@ -289,7 +354,7 @@ export default function ProfilePage() {
           </button>
         </div>
         <div className={homeStyles.rightControls}>
-          {connected ? (
+          {connected && !isV1 ? (
             <div className={homeStyles.xpChip} aria-label="Your XP">
               <span className={homeStyles.xpValue}>4,269 XP</span>
               <img src="/sparkle.svg" alt="" className={homeStyles.sparkleIcon} />
@@ -313,7 +378,7 @@ export default function ProfilePage() {
             <div className={homeStyles.menuWalletWrapper} onClick={closeMenu}>
               <WalletButton className={homeStyles.menuWallet} />
             </div>
-            {connected ? (
+            {connected && !isV1 ? (
               <button
                 type="button"
                 className={homeStyles.menuItem}
@@ -326,21 +391,23 @@ export default function ProfilePage() {
                 <span>PROFILE</span>
               </button>
             ) : null}
-            <button
-              type="button"
-              className={homeStyles.menuItem}
-              onClick={() => {
-                closeMenu();
-                router.push("/leaderboard");
-              }}
-            >
-              <img
-                src="/trophy.svg"
-                alt=""
-                className={`${homeStyles.menuIcon} ${homeStyles.pixelIcon} ${homeStyles.trophyIcon}`}
-              />
-              <span>LEADERBOARD</span>
-            </button>
+            {!isV1 ? (
+              <button
+                type="button"
+                className={homeStyles.menuItem}
+                onClick={() => {
+                  closeMenu();
+                  router.push("/leaderboard");
+                }}
+              >
+                <img
+                  src="/trophy.svg"
+                  alt=""
+                  className={`${homeStyles.menuIcon} ${homeStyles.pixelIcon} ${homeStyles.trophyIcon}`}
+                />
+                <span>LEADERBOARD</span>
+              </button>
+            ) : null}
             <button
               type="button"
               className={homeStyles.menuItem}
@@ -356,14 +423,18 @@ export default function ProfilePage() {
               />
               <span>{muted ? "Unmute" : "Mute"}</span>
             </button>
-            <button type="button" className={homeStyles.menuItem} onClick={closeMenu}>
-              <img src="/info.svg" alt="" className={homeStyles.menuIcon} />
-              <span>Help</span>
-            </button>
-            <button type="button" className={homeStyles.menuItem} onClick={closeMenu}>
-              <img src="/chat.svg" alt="" className={homeStyles.menuIcon} />
-              <span>Chat</span>
-            </button>
+            {!isV1 ? (
+              <>
+                <button type="button" className={homeStyles.menuItem} onClick={closeMenu}>
+                  <img src="/info.svg" alt="" className={homeStyles.menuIcon} />
+                  <span>Help</span>
+                </button>
+                <button type="button" className={homeStyles.menuItem} onClick={closeMenu}>
+                  <img src="/chat.svg" alt="" className={homeStyles.menuIcon} />
+                  <span>Chat</span>
+                </button>
+              </>
+            ) : null}
           </nav>
         </div>
         {menuOpen ? (
@@ -379,17 +450,21 @@ export default function ProfilePage() {
 
       <section className={styles.content}>
         <div className={styles.heroCard}>
-          <div className={styles.avatarWrap}>
-            {avatarUrl ? (
+          <button
+            type="button"
+            className={styles.avatarWrap}
+            onClick={() => connected && setSelectingPfp(true)}
+            aria-label="Choose profile picture"
+          >
+            {sanitizeCssUrl(avatarUrl) ? (
               <div
                 className={styles.avatarImage}
-                style={{ backgroundImage: `url(${avatarUrl})` }}
-                aria-label="Profile avatar"
+                style={{ backgroundImage: `url(${sanitizeCssUrl(avatarUrl)})` }}
               />
             ) : (
               <div className={styles.avatarFallback}>{initialsFor(displayUsername)}</div>
             )}
-          </div>
+          </button>
           <div className={styles.heroMeta}>
             <p className={styles.eyebrow}>FROG SOCIAL PROFILE</p>
             <h1 className={styles.title}>{displayUsername}</h1>
@@ -495,6 +570,7 @@ export default function ProfilePage() {
                           alt={label}
                           className={styles.nftImage}
                           loading="lazy"
+                          referrerPolicy="no-referrer"
                         />
                       ) : (
                         <div className={styles.nftPlaceholder}>{initialsFor(label)}</div>
@@ -526,6 +602,59 @@ export default function ProfilePage() {
 
         {errorMessage ? <p className={styles.errorBanner}>{errorMessage}</p> : null}
       </section>
+
+      {selectingPfp && (
+        <div className={styles.pfpOverlay} role="dialog" aria-modal="true" aria-label="Choose profile picture">
+          <div className={styles.pfpModal}>
+            <div className={styles.pfpHeader}>
+              <h3>Choose your frog PFP</h3>
+              <button
+                type="button"
+                className={styles.closeButton}
+                onClick={() => setSelectingPfp(false)}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            {pfpError ? <p className={styles.errorBanner}>{pfpError}</p> : null}
+            <div className={styles.pfpGrid}>
+              {allNfts.length ? (
+                allNfts.map((nft) => {
+                  const num = extractNftNumber(nft.name, nft.collection);
+                  const displayName = cleanNftName(nft.name, num);
+                  const label = num ? `${displayName} #${num}` : displayName;
+                  const isCurrent = pfpMint === nft.id;
+                  return (
+                    <button
+                      key={nft.id}
+                      type="button"
+                      className={`${styles.pfpChoice} ${isCurrent ? styles.pfpChoiceActive : ""}`}
+                      onClick={() => handleSelectPfp(nft.id, nft.image ?? null)}
+                      disabled={pfpSaving}
+                    >
+                      <div className={styles.pfpImageWrap}>
+                        {nft.image ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={nft.image} alt={label} className={styles.pfpImage} referrerPolicy="no-referrer" />
+                        ) : (
+                          <div className={styles.nftPlaceholder}>{initialsFor(label)}</div>
+                        )}
+                      </div>
+                      <span className={styles.pfpLabel}>
+                        {label}
+                        {isCurrent ? " (current)" : ""}
+                      </span>
+                    </button>
+                  );
+                })
+              ) : (
+                <p className={styles.emptyState}>No frogs found in your wallet.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

@@ -20,7 +20,7 @@
     "@solana/wallet-adapter-react-ui": "^0.9.39",
     "@solana/wallet-adapter-wallets": "^0.19.37",
     "@solana/web3.js": "^1.98.4",
-    "next": "15.5.4",
+    "next": "^15.5.8",
     "react": "19.1.0",
     "react-dom": "19.1.0"
   },
@@ -36,7 +36,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "dotenv": "^16.4.5",
     "eslint": "^9",
-    "eslint-config-next": "15.5.4",
+    "eslint-config-next": "^15.5.8",
     "jsdom": "^26.0.0",
     "pino-pretty": "^11.2.2",
     "tsx": "^4.19.2",

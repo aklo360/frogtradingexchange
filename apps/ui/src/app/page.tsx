@@ -3,9 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { SwapCard } from "@/components/SwapCard";
+import { BuybackProgress } from "@/components/BuybackProgress";
 import { WalletButton } from "@/components/WalletButton";
 import { Ticker } from "@/components/Ticker";
 import { useAudio } from "@/providers/AudioProvider";
+import { isV1 } from "@/lib/version";
 import { useWallet } from "@solana/wallet-adapter-react";
 import styles from "./page.module.css";
 
@@ -78,12 +80,24 @@ export default function Home() {
           </button>
         </div>
         <div className={styles.rightControls}>
-          {connected ? (
+          {connected && !isV1 ? (
             <div className={styles.xpChip} aria-label="Your XP">
               <span className={styles.xpValue}>4,269 XP</span>
               <img src="/sparkle.svg" alt="" className={styles.sparkleIcon} />
             </div>
           ) : null}
+          <button
+            type="button"
+            className={styles.speakerButton}
+            aria-label={muted ? "Unmute audio" : "Mute audio"}
+            onClick={handleToggleMute}
+          >
+            <img
+              src={muted ? "/mute.svg" : "/sound.svg"}
+              alt=""
+              className={styles.speakerIcon}
+            />
+          </button>
           <button
             type="button"
             className={styles.menuButton}
@@ -102,7 +116,7 @@ export default function Home() {
             <div className={styles.menuWalletWrapper} onClick={closeMenu}>
               <WalletButton className={styles.menuWallet} />
             </div>
-            {connected ? (
+            {connected && !isV1 ? (
               <button
                 type="button"
                 className={styles.menuItem}
@@ -119,41 +133,35 @@ export default function Home() {
                 <span>PROFILE</span>
               </button>
             ) : null}
-            <button
-              type="button"
-              className={styles.menuItem}
-              onClick={() => {
-                closeMenu();
-                router.push("/leaderboard");
-              }}
-            >
-              <img
-                src="/trophy.svg"
-                alt=""
-                className={`${styles.menuIcon} ${styles.pixelIcon} ${styles.trophyIcon}`}
-              />
-              <span>LEADERBOARD</span>
-            </button>
-            <button
-              type="button"
-              className={styles.menuItem}
-              onClick={() => { handleToggleMute(); closeMenu(); }}
-            >
-              <img
-                src={muted ? "/mute.svg" : "/sound.svg"}
-                alt=""
-                className={styles.menuIcon}
-              />
-              <span>{muted ? "Unmute" : "Mute"}</span>
-            </button>
-            <button type="button" className={styles.menuItem} onClick={closeMenu}>
-              <img src="/info.svg" alt="" className={styles.menuIcon} />
-              <span>Help</span>
-            </button>
-            <button type="button" className={styles.menuItem} onClick={closeMenu}>
-              <img src="/chat.svg" alt="" className={styles.menuIcon} />
-              <span>Chat</span>
-            </button>
+            {!isV1 ? (
+              <button
+                type="button"
+                className={styles.menuItem}
+                onClick={() => {
+                  closeMenu();
+                  router.push("/leaderboard");
+                }}
+              >
+                <img
+                  src="/trophy.svg"
+                  alt=""
+                  className={`${styles.menuIcon} ${styles.pixelIcon} ${styles.trophyIcon}`}
+                />
+                <span>LEADERBOARD</span>
+              </button>
+            ) : null}
+            {!isV1 ? (
+              <>
+                <button type="button" className={styles.menuItem} onClick={closeMenu}>
+                  <img src="/info.svg" alt="" className={styles.menuIcon} />
+                  <span>Help</span>
+                </button>
+                <button type="button" className={styles.menuItem} onClick={closeMenu}>
+                  <img src="/chat.svg" alt="" className={styles.menuIcon} />
+                  <span>Chat</span>
+                </button>
+              </>
+            ) : null}
           </nav>
         </div>
         {menuOpen ? (
@@ -166,7 +174,10 @@ export default function Home() {
         ) : null}
       </header>
       <Ticker />
-      <SwapCard />
+      <div className={styles.swapStack}>
+        {isV1 ? <BuybackProgress /> : null}
+        <SwapCard />
+      </div>
     </main>
   );
 }

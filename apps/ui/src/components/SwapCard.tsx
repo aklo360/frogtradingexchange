@@ -503,7 +503,7 @@ export const SwapCard = () => {
     if (isSwapping) return "Swapping...";
     if (hasExecutableQuote) return "Swap";
     if (quoteState.status === "loading") return "Fetching quote...";
-    return "Swap (Coming Soon)";
+    return "Swap";
   })();
 
   const primaryActionDisabled = walletConnected
