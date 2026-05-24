@@ -9,11 +9,18 @@ import {
   AddressLookupTableAccount,
   LAMPORTS_PER_SOL,
   PublicKey,
+  type RpcResponseAndContext,
+  type SignatureResult,
   TransactionInstruction,
   TransactionMessage,
   VersionedTransaction,
 } from "@solana/web3.js";
-import { useQuotePreview } from "@/lib/hooks/useQuotePreview";
+import {
+  normalizeQuotePreview,
+  useQuotePreview,
+  type QuotePreview,
+  type QuotePreviewResponse,
+} from "@/lib/hooks/useQuotePreview";
 import { buildApiUrl } from "@/lib/api";
 import { toBaseUnits } from "@/lib/solana/validation";
 import type { TokenOption } from "@/lib/tokens";
@@ -38,6 +45,16 @@ type QuoteInstruction = {
 
 const DEFAULT_SLIPPAGE_BPS = 50;
 const DEFAULT_PRIORITY_FEE = 0;
+
+const assertConfirmedSwap = (
+  confirmation: RpcResponseAndContext<SignatureResult>,
+) => {
+  if (confirmation.value.err) {
+    throw new Error(
+      `Swap failed on-chain: ${JSON.stringify(confirmation.value.err)}`,
+    );
+  }
+};
 
 const formatNumber = (value: number, maximumFractionDigits = 6) =>
   Number.isFinite(value)
@@ -341,15 +358,51 @@ export const SwapCard = () => {
     );
   };
 
-  const buildTransactionFromInstructions = async () => {
-    if (!quoteData?.instructions?.length || !publicKey) {
+  const fetchExecutableQuote = async (): Promise<QuotePreview> => {
+    if (!publicKeyBase58) {
+      throw new Error("Wallet public key missing");
+    }
+
+    const response = await fetch(buildApiUrl("/api/frogx/quotes"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        inMint: fromToken.mint,
+        outMint: toToken.mint,
+        amountIn: amountInBaseUnits,
+        slippageBps: DEFAULT_SLIPPAGE_BPS,
+        priorityFee: DEFAULT_PRIORITY_FEE,
+        userPublicKey: publicKeyBase58,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Quote refresh failed with status ${response.status}`);
+    }
+
+    const freshQuote = normalizeQuotePreview(
+      (await response.json()) as QuotePreviewResponse,
+    );
+
+    if (
+      !freshQuote.transactionBase64 &&
+      (freshQuote.instructions?.length ?? 0) === 0
+    ) {
+      throw new Error("Fresh quote is not executable");
+    }
+
+    return freshQuote;
+  };
+
+  const buildTransactionFromInstructions = async (executableQuote: QuotePreview) => {
+    if (!executableQuote.instructions?.length || !publicKey) {
       throw new Error("Quote missing route instructions");
     }
 
     const instructionList =
-      quoteData.instructions?.map(toTransactionInstruction) ?? [];
+      executableQuote.instructions?.map(toTransactionInstruction) ?? [];
     const lookupTables = await loadLookupTables(
-      quoteData.addressLookupTables ?? [],
+      executableQuote.addressLookupTables ?? [],
     );
     const { blockhash, lastValidBlockHeight } =
       await connection.getLatestBlockhash("finalized");
@@ -458,11 +511,13 @@ export const SwapCard = () => {
       let confirmationParams: { blockhash: string; lastValidBlockHeight: number } | null =
         null;
 
-      if (quoteData?.transactionBase64) {
-        const bytes = decodeBase64ToUint8Array(quoteData.transactionBase64);
+      const executableQuote = await fetchExecutableQuote();
+
+      if (executableQuote.transactionBase64) {
+        const bytes = decodeBase64ToUint8Array(executableQuote.transactionBase64);
         transaction = VersionedTransaction.deserialize(bytes);
       } else {
-        const built = await buildTransactionFromInstructions();
+        const built = await buildTransactionFromInstructions(executableQuote);
         transaction = built.transaction;
         confirmationParams = {
           blockhash: built.blockhash,
@@ -474,18 +529,18 @@ export const SwapCard = () => {
         skipPreflight: false,
       });
 
-      if (confirmationParams) {
-        await connection.confirmTransaction(
+      const confirmation = confirmationParams
+        ? await connection.confirmTransaction(
           {
             signature,
             blockhash: confirmationParams.blockhash,
             lastValidBlockHeight: confirmationParams.lastValidBlockHeight,
           },
           "confirmed",
-        );
-      } else {
-        await connection.confirmTransaction(signature, "confirmed");
-      }
+        )
+        : await connection.confirmTransaction(signature, "confirmed");
+
+      assertConfirmedSwap(confirmation);
 
       setLastSignature(signature);
       // Success toast overlay with money sticker; stays until user closes

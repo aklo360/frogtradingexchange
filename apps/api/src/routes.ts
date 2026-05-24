@@ -3,6 +3,8 @@ import {
   getPlatformFeeConfig,
   debugPlatformConfig,
   resolvePlatformFee,
+  type PlatformFeeConfig,
+  type PlatformFeeResolution,
 } from "./fees";
 import {
   burnBuybackAsset,
@@ -18,6 +20,80 @@ import {
 
 const json = (data: unknown, init?: ResponseInit) =>
   Response.json(data, init);
+
+const validatePlatformFeeResolution = async (
+  env: Env,
+  config: PlatformFeeConfig,
+  resolution: PlatformFeeResolution | null,
+) => {
+  if (!resolution?.feeAccount) return null;
+
+  const rpcUrl = env.SOLANA_RPC_URL?.trim();
+  if (!rpcUrl) {
+    console.warn("[fees] Skipping platform fee; SOLANA_RPC_URL unavailable");
+    return null;
+  }
+
+  try {
+    const response = await fetch(rpcUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "getAccountInfo",
+        params: [resolution.feeAccount, { encoding: "jsonParsed" }],
+      }),
+    });
+    if (!response.ok) {
+      console.warn("[fees] Skipping platform fee; RPC account lookup failed", {
+        status: response.status,
+      });
+      return null;
+    }
+
+    const data = (await response.json()) as {
+      result?: {
+        value?: {
+          data?: {
+            parsed?: {
+              info?: {
+                mint?: string;
+                owner?: string;
+                state?: string;
+              };
+              type?: string;
+            };
+          };
+          owner?: string;
+        } | null;
+      };
+    };
+
+    const account = data.result?.value;
+    const info = account?.data?.parsed?.info;
+    const expectedOwner = config.collectorAuthority?.toBase58?.();
+    const valid =
+      account?.owner === "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" &&
+      account.data?.parsed?.type === "account" &&
+      info?.state === "initialized" &&
+      info?.mint === resolution.feeMint &&
+      (!expectedOwner || info.owner === expectedOwner);
+
+    if (!valid) {
+      console.warn("[fees] Skipping platform fee; fee account invalid", {
+        feeAccount: resolution.feeAccount,
+        feeMint: resolution.feeMint,
+      });
+      return null;
+    }
+
+    return resolution;
+  } catch (error) {
+    console.warn("[fees] Skipping platform fee; fee account validation errored", error);
+    return null;
+  }
+};
 
 const createMockQuote = (payload: Partial<QuoteRequest>) =>
   json(
@@ -132,7 +208,11 @@ export async function postQuotes(request: Request, env: Env): Promise<Response> 
   try {
     const usePlatformFee = feeConfig.enabled;
     const feeResolution = usePlatformFee
-      ? resolvePlatformFee(feeConfig, inMint ?? "", outMint ?? "")
+      ? await validatePlatformFeeResolution(
+          env,
+          feeConfig,
+          resolvePlatformFee(feeConfig, inMint ?? "", outMint ?? ""),
+        )
       : null;
     const quote = await fetchBestQuote(
       {
@@ -207,7 +287,11 @@ export async function postSwap(request: Request, env: Env): Promise<Response> {
 
   const usePlatformFee = feeConfig.enabled;
   const feeResolution = usePlatformFee
-    ? resolvePlatformFee(feeConfig, payload.inMint, payload.outMint)
+    ? await validatePlatformFeeResolution(
+        env,
+        feeConfig,
+        resolvePlatformFee(feeConfig, payload.inMint, payload.outMint),
+      )
     : null;
 
   const swapBody = {
@@ -216,9 +300,7 @@ export async function postSwap(request: Request, env: Env): Promise<Response> {
       ? {
           feeBps: feeResolution.feeBps,
           feeFromInputMint: feeResolution.feeFromInputMint,
-          ...(feeResolution.feeAccount
-            ? { feeAccount: feeResolution.feeAccount }
-            : {}),
+          feeAccount: feeResolution.feeAccount,
         }
       : {}),
   };

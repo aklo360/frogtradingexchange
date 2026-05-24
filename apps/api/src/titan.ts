@@ -2,7 +2,7 @@ import { decode, encode } from "msgpackr";
 import bs58 from "bs58";
 import type { TitanConfig } from "./env";
 
-const TITAN_PROTOCOLS = ["v1.api.titan.ag+msgpack", "v1.api.titan.ag"];
+const TITAN_PROTOCOLS = ["v1.api.titan.ag"];
 const REQUEST_TIMEOUT_MS = 7_000;
 const DEFAULT_UPDATE_INTERVAL_MS = 1_000;
 const DEFAULT_NUM_QUOTES = 3;

@@ -6,7 +6,7 @@ const WRAPPED_SOL_MINT = "So11111111111111111111111111111111111111112";
 const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const USDT_MINT = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB";
 
-const PRIORITY_MINTS = [WRAPPED_SOL_MINT, USDC_MINT, USDT_MINT] as const;
+const STABLE_FEE_MINTS = [USDC_MINT, USDT_MINT] as const;
 
 const DEFAULT_FEE_BPS = 100;
 
@@ -137,12 +137,15 @@ const deriveAta = (mint: PublicKey, owner: PublicKey) => {
 };
 
 const pickFeeMint = (inMint: string | null, outMint: string | null) => {
-  for (const candidate of PRIORITY_MINTS) {
-    if (candidate === inMint || candidate === outMint) {
-      return candidate;
-    }
+  for (const candidate of STABLE_FEE_MINTS) {
+    if (candidate === outMint) return candidate;
   }
-  return inMint ?? outMint ?? "";
+  for (const candidate of STABLE_FEE_MINTS) {
+    if (candidate === inMint) return candidate;
+  }
+  if (outMint === WRAPPED_SOL_MINT) return WRAPPED_SOL_MINT;
+  if (inMint === WRAPPED_SOL_MINT) return WRAPPED_SOL_MINT;
+  return outMint ?? inMint ?? "";
 };
 
 export const resolvePlatformFee = (

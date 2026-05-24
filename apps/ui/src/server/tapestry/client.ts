@@ -9,9 +9,7 @@ import type {
   TradeHistoryEntry,
   WalletSocialCounts,
 } from "@/lib/tapestry/types";
-import { tapestryConfig } from "@/server/env";
-
-const { apiKey, baseUrl } = tapestryConfig;
+import { getTapestryConfig } from "@/server/env";
 
 type HttpMethod = "GET" | "POST";
 
@@ -39,6 +37,7 @@ async function tapestryFetch<T>(
   options: RequestOptions = {},
 ): Promise<T> {
   const { method = "GET", searchParams, body } = options;
+  const { apiKey, baseUrl } = getTapestryConfig();
   const normalizedBase = baseUrl.endsWith("/")
     ? baseUrl
     : `${baseUrl}/`;

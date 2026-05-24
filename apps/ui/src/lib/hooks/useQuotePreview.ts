@@ -38,7 +38,7 @@ type QuotePlatformFee = {
   direction: "input" | "output";
 };
 
-type QuotePreviewResponse = {
+export type QuotePreviewResponse = {
   amountOut: string;
   priceImpactBps: number;
   routers: Array<{ id?: string; name?: string } | string>;
@@ -55,7 +55,7 @@ type QuotePreviewResponse = {
   platformFee?: QuotePlatformFee;
 };
 
-type QuotePreview = {
+export type QuotePreview = {
   amountOut: string;
   priceImpactBps: number;
   routers: string[];
@@ -70,6 +70,33 @@ type QuotePreview = {
   computeUnits?: number;
   computeUnitsSafe?: number;
   platformFee?: QuotePlatformFee;
+};
+
+export const normalizeQuotePreview = (
+  raw: QuotePreviewResponse,
+): QuotePreview => {
+  const routers = raw.routers.map((router) =>
+    typeof router === "string"
+      ? router
+      : router.name ?? router.id ?? "unknown-router",
+  );
+
+  return {
+    amountOut: raw.amountOut,
+    priceImpactBps: raw.priceImpactBps,
+    routers,
+    executable: raw.executable,
+    updatedAt: raw.updatedAt,
+    provider: raw.provider,
+    routeId: raw.routeId,
+    transactionBase64: raw.transactionBase64,
+    inAmount: raw.inAmount,
+    instructions: raw.instructions ?? [],
+    addressLookupTables: raw.addressLookupTables ?? [],
+    computeUnits: raw.computeUnits,
+    computeUnitsSafe: raw.computeUnitsSafe,
+    platformFee: raw.platformFee,
+  };
 };
 
 export const useQuotePreview = (params: QuotePreviewParams) => {
@@ -118,30 +145,10 @@ export const useQuotePreview = (params: QuotePreviewParams) => {
         }
 
         const raw = (await response.json()) as QuotePreviewResponse;
-        const routers = raw.routers.map((router) =>
-          typeof router === "string"
-            ? router
-            : router.name ?? router.id ?? "unknown-router",
-        );
 
         setState({
           status: "success",
-          data: {
-            amountOut: raw.amountOut,
-            priceImpactBps: raw.priceImpactBps,
-            routers,
-            executable: raw.executable,
-            updatedAt: raw.updatedAt,
-            provider: raw.provider,
-            routeId: raw.routeId,
-            transactionBase64: raw.transactionBase64,
-            inAmount: raw.inAmount,
-            instructions: raw.instructions ?? [],
-            addressLookupTables: raw.addressLookupTables ?? [],
-            computeUnits: raw.computeUnits,
-            computeUnitsSafe: raw.computeUnitsSafe,
-            platformFee: raw.platformFee,
-          },
+          data: normalizeQuotePreview(raw),
         });
       } catch (error) {
         if ((error as Error).name === "AbortError") {

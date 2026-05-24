@@ -104,4 +104,22 @@ describe("SwapCard", () => {
     fireEvent.click(swapButton);
     await waitFor(() => expect(sendTransactionMock).toHaveBeenCalled());
   });
+
+  it("shows an error when the confirmed transaction failed on-chain", async () => {
+    confirmTransactionMock.mockResolvedValueOnce({
+      value: { err: { InstructionError: [6, { Custom: 6006 }] } },
+    });
+
+    render(<SwapCard />);
+
+    const amountInput = screen.getByLabelText(/amount to pay/i);
+    fireEvent.change(amountInput, { target: { value: "1" } });
+
+    const swapButton = await screen.findByRole("button", { name: /^swap$/i });
+    fireEvent.click(swapButton);
+
+    expect(
+      await screen.findByText(/swap failed on-chain/i),
+    ).toBeInTheDocument();
+  });
 });

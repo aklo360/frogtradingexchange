@@ -33,6 +33,7 @@ const DEFAULT_ME_MMM_POOLS_PATH = "/mmm/pools";
 const DEFAULT_ME_MMM_FULFILL_SELL_PATH = "/instructions/mmm/sol-fulfill-sell";
 const DEFAULT_ME_WALLET_TOKENS_PATH = "/wallets/{wallet}/tokens";
 const DEFAULT_ME_MMM_POOLS_LIMIT = 500;
+const JUPITER_PRICE_URL = "https://lite-api.jup.ag/price/v3";
 
 const DEFAULT_RESERVE_SOL = 0.05;
 const DEFAULT_RESERVE_USDC = 1;
@@ -90,6 +91,13 @@ type BuybackStatus = {
   floorSol: number | null;
   progress: number | null;
   remainingSol: number | null;
+  tokenBalances?: {
+    nativeSol: number;
+    wsol: number;
+    usdc: number;
+    usdt: number;
+  };
+  priceSource?: string | null;
   updatedAt: string;
 };
 
@@ -989,9 +997,88 @@ const getSplTokenBalance = async (
   }
 };
 
+const getTokenAccountBalance = async (
+  connection: Connection,
+  account: PublicKey | null,
+) => {
+  if (!account) return 0n;
+  try {
+    const balance = await connection.getTokenAccountBalance(account, "confirmed");
+    return BigInt(balance.value.amount);
+  } catch {
+    return 0n;
+  }
+};
+
 const getSolBalance = async (connection: Connection, owner: PublicKey) => {
   const lamports = await connection.getBalance(owner, "confirmed");
   return BigInt(lamports);
+};
+
+const resolveTokenAccount = (
+  explicitAccount: string | undefined,
+  mint: string,
+  owner: PublicKey,
+) => {
+  if (explicitAccount) {
+    try {
+      return new PublicKey(explicitAccount);
+    } catch {
+      return null;
+    }
+  }
+
+  try {
+    return getAssociatedTokenAddressSync(new PublicKey(mint), owner, true);
+  } catch {
+    return null;
+  }
+};
+
+const fetchBuybackPrices = async () => {
+  const url = new URL(JUPITER_PRICE_URL);
+  url.searchParams.set("ids", [WRAPPED_SOL_MINT, USDC_MINT, USDT_MINT].join(","));
+
+  try {
+    const response = await fetch(url.toString());
+    if (!response.ok) return null;
+    const data = (await response.json()) as Record<
+      string,
+      { usdPrice?: unknown }
+    >;
+
+    const solUsd = Number(data[WRAPPED_SOL_MINT]?.usdPrice);
+    const usdcUsd = Number(data[USDC_MINT]?.usdPrice);
+    const usdtUsd = Number(data[USDT_MINT]?.usdPrice);
+
+    if (!Number.isFinite(solUsd) || solUsd <= 0) return null;
+
+    return {
+      solUsd,
+      usdcUsd: Number.isFinite(usdcUsd) && usdcUsd > 0 ? usdcUsd : 1,
+      usdtUsd: Number.isFinite(usdtUsd) && usdtUsd > 0 ? usdtUsd : 1,
+    };
+  } catch (error) {
+    console.warn("[buyback] Failed to fetch Jupiter prices", error);
+    return null;
+  }
+};
+
+const tokenAmountToNumber = (amount: bigint, decimals: number) =>
+  Number(amount) / 10 ** decimals;
+
+const stableTokenValueLamports = (
+  amount: bigint,
+  tokenUsd: number,
+  solUsd: number,
+) => {
+  if (amount <= 0n || !Number.isFinite(tokenUsd) || !Number.isFinite(solUsd) || solUsd <= 0) {
+    return 0n;
+  }
+
+  const tokenUnits = tokenAmountToNumber(amount, 6);
+  const estimatedSol = (tokenUnits * tokenUsd) / solUsd;
+  return BigInt(Math.floor(estimatedSol * LAMPORTS_PER_SOL));
 };
 
 const swapToSol = async (
@@ -1081,37 +1168,70 @@ export const getBuybackStatus = async (env: Env): Promise<BuybackStatus> => {
 
   const connection = new Connection(config.rpcUrl, "confirmed");
 
-  const [solLamports, floorLamports] = await Promise.all([
+  const wsolAccount = resolveTokenAccount(
+    env.PLATFORM_FEE_SOL_ACCOUNT,
+    WRAPPED_SOL_MINT,
+    walletKey,
+  );
+  const usdcAccount = resolveTokenAccount(
+    env.PLATFORM_FEE_USDC_ACCOUNT,
+    USDC_MINT,
+    walletKey,
+  );
+  const usdtAccount = resolveTokenAccount(
+    env.PLATFORM_FEE_USDT_ACCOUNT,
+    USDT_MINT,
+    walletKey,
+  );
+
+  const [solLamports, wsolLamports, usdcAmount, usdtAmount, floorLamports, prices] = await Promise.all([
     getSolBalance(connection, walletKey),
+    getTokenAccountBalance(connection, wsolAccount),
+    getTokenAccountBalance(connection, usdcAccount),
+    getTokenAccountBalance(connection, usdtAccount),
     getFloorPriceLamports(config).catch((error) => {
       console.warn("[buyback] Failed to fetch floor price", error);
       return null;
     }),
+    fetchBuybackPrices(),
   ]);
 
-  const availableSol = solLamports > config.reserveLamports
+  const availableNativeSol = solLamports > config.reserveLamports
     ? solLamports - config.reserveLamports
     : 0n;
+  const estimatedTokenLamports = prices
+    ? wsolLamports +
+      stableTokenValueLamports(usdcAmount, prices.usdcUsd, prices.solUsd) +
+      stableTokenValueLamports(usdtAmount, prices.usdtUsd, prices.solUsd)
+    : wsolLamports;
+  const collectedLamports = availableNativeSol + estimatedTokenLamports;
 
   const progress =
     floorLamports && floorLamports > 0n
-      ? Math.min(Number(availableSol) / Number(floorLamports), 1)
+      ? Math.min(Number(collectedLamports) / Number(floorLamports), 1)
       : null;
 
   const remaining =
-    floorLamports && floorLamports > availableSol
-      ? Number(floorLamports - availableSol) / LAMPORTS_PER_SOL
+    floorLamports && floorLamports > collectedLamports
+      ? Number(floorLamports - collectedLamports) / LAMPORTS_PER_SOL
       : 0;
 
   return {
     enabled: config.enabled,
     wallet: config.walletAddress,
-    collectedLamports: toLamportsString(availableSol),
+    collectedLamports: toLamportsString(collectedLamports),
     floorLamports: toLamportsString(floorLamports),
-    collectedSol: toSolNumber(availableSol),
+    collectedSol: toSolNumber(collectedLamports),
     floorSol: toSolNumber(floorLamports),
     progress,
     remainingSol: floorLamports ? remaining : null,
+    tokenBalances: {
+      nativeSol: toSolNumber(solLamports) ?? 0,
+      wsol: tokenAmountToNumber(wsolLamports, 9),
+      usdc: tokenAmountToNumber(usdcAmount, 6),
+      usdt: tokenAmountToNumber(usdtAmount, 6),
+    },
+    priceSource: prices ? "jupiter-price-v3" : null,
     updatedAt,
   };
 };
