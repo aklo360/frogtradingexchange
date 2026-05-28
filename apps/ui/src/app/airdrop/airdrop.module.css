@@ -242,12 +242,34 @@
 }
 
 .result {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  justify-content: space-between;
   gap: 1rem;
   padding: 1rem 1.2rem;
   border-color: rgba(20, 241, 149, 0.5);
+}
+
+.result a,
+.result em {
+  font-size: 0.5rem;
+  font-style: normal;
+  letter-spacing: 0.08em;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.result a {
+  color: #14f195;
+  text-decoration: none;
+}
+
+.result a:hover {
+  text-decoration: underline;
+}
+
+.result em {
+  color: rgba(234, 253, 244, 0.58);
 }
 
 .status,
@@ -311,5 +333,10 @@
   .ethControls button,
   .claimButton {
     width: 100%;
+  }
+
+  .result {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
   }
 }

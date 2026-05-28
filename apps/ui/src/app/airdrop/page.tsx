@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWallet } from "@solana/wallet-adapter-react";
 
@@ -30,6 +30,9 @@ type ClaimStatus = {
   frogCount: number;
   status: string;
   amountDaemon: string | null;
+  payoutStatus: string | null;
+  payoutTxHash: string | null;
+  paidAt: string | null;
   createdAt: string;
   finalizedAt: string | null;
 };
@@ -121,6 +124,21 @@ const getEthereumProvider = () =>
   (window as typeof window & { ethereum?: EthereumProvider }).ethereum ??
   null;
 
+const getClaimButtonText = (claim: ClaimStatus | null, loading: boolean) => {
+  if (loading) return "Signing";
+  if (!claim) return "Claim";
+  if (claim.payoutTxHash) return "Airdropped";
+  if (claim.status === "not_selected") return "Pool exhausted";
+  return "Reserved";
+};
+
+const getClaimResultLabel = (claim: ClaimStatus) => {
+  if (claim.payoutTxHash) return "Airdropped";
+  if (claim.status === "not_selected") return "Pool exhausted";
+  if (claim.status === "won") return "Reserved, not sent";
+  return "Claim recorded";
+};
+
 export default function AirdropPage() {
   const router = useRouter();
   const { publicKey, signMessage, connected } = useWallet();
@@ -165,6 +183,17 @@ export default function AirdropPage() {
     Boolean(signMessage) &&
     !claim;
 
+  const loadAirdropStatus = useCallback(
+    async (signal?: AbortSignal) => {
+      const query = solAddress ? `?solAddress=${encodeURIComponent(solAddress)}` : "";
+      const response = await fetch(`/api/frogx/airdrop${query}`, { signal });
+      if (!response.ok) return;
+      const data = (await response.json()) as AirdropResponse;
+      setAirdrop(data);
+    },
+    [solAddress],
+  );
+
   useEffect(() => {
     if (!menuOpen) return undefined;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -178,22 +207,25 @@ export default function AirdropPage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    const load = async () => {
-      const query = solAddress ? `?solAddress=${encodeURIComponent(solAddress)}` : "";
-      const response = await fetch(`/api/frogx/airdrop${query}`, {
-        signal: controller.signal,
-      });
-      if (!response.ok) return;
-      const data = (await response.json()) as AirdropResponse;
-      setAirdrop(data);
-    };
-    load().catch(() => {
+    loadAirdropStatus(controller.signal).catch(() => {
       if (!controller.signal.aborted) {
         setError("Airdrop status is unavailable.");
       }
     });
     return () => controller.abort();
-  }, [solAddress]);
+  }, [loadAirdropStatus]);
+
+  useEffect(() => {
+    if (!claim || claim.payoutTxHash || !solAddress) {
+      return undefined;
+    }
+
+    const interval = window.setInterval(() => {
+      loadAirdropStatus().catch(() => undefined);
+    }, 10000);
+
+    return () => window.clearInterval(interval);
+  }, [claim, loadAirdropStatus, solAddress]);
 
   useEffect(() => {
     setEligibility(null);
@@ -325,7 +357,7 @@ export default function AirdropPage() {
         claim: claimData.claim ?? null,
         stats: claimData.stats ?? stats,
       }));
-      setStatusText("Claim received.");
+      setStatusText("Claim recorded. Payout has not been sent yet.");
     } catch (caught) {
       const message =
         caught instanceof Error ? caught.message : "Claim could not be submitted.";
@@ -444,8 +476,8 @@ export default function AirdropPage() {
               </strong>
             </div>
             <div>
-              <span>Left</span>
-              <strong>{stats?.remainingDaemon ?? config?.poolDaemon ?? "10.00"}</strong>
+              <span>Unreserved</span>
+              <strong>{stats?.remainingDaemon ?? config?.poolDaemon ?? "10.00"} $DAEMON</strong>
             </div>
           </div>
 
@@ -508,9 +540,11 @@ export default function AirdropPage() {
                 <h3>Claim queue</h3>
                 <p>
                   {claim
-                    ? claim.amountDaemon
-                      ? `Claim #${claim.sequence}: ${claim.amountDaemon} $DAEMON for ${claim.frogCount} frogs.`
-                      : `Claim #${claim.sequence} received with ${claim.frogCount} frogs.`
+                    ? claim.payoutTxHash
+                      ? `Airdropped ${claim.amountDaemon ?? "0.00"} $DAEMON to ${formatAddress(claim.ethAddress)}.`
+                      : claim.amountDaemon
+                        ? `Claim #${claim.sequence} reserved ${claim.amountDaemon} $DAEMON for ${claim.frogCount} frogs. No airdrop has been sent yet.`
+                        : `Claim #${claim.sequence} recorded with ${claim.frogCount} frogs. Payout is not sent yet.`
                     : `Sign with your Solana frog wallet. ${fullPrizeMinFrogs}+ frogs gets 1 $DAEMON; 1+ gets 0.1. We cover all gas fees.`}
                 </p>
               </div>
@@ -520,25 +554,30 @@ export default function AirdropPage() {
                 disabled={!canClaim || loading}
                 onClick={submitClaim}
               >
-                {loading ? "Signing" : claim ? "Claim received" : "Claim"}
+                {getClaimButtonText(claim, loading)}
               </button>
             </div>
           </div>
 
           {claim ? (
             <div className={styles.result}>
-              <span>
-                {claim.status === "won"
-                  ? "Claim received"
-                  : claim.status === "not_selected"
-                    ? "Pool exhausted"
-                    : "Claim received"}
-              </span>
+              <span>{getClaimResultLabel(claim)}</span>
               <strong>
                 {claim.amountDaemon === null
-                  ? "FCFS amount pending"
+                  ? "No payout amount yet"
                   : `${claim.amountDaemon} $DAEMON`}
               </strong>
+              {claim.payoutTxHash ? (
+                <a
+                  href={`https://etherscan.io/tx/${claim.payoutTxHash}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  View tx
+                </a>
+              ) : (
+                <em>No transfer tx yet</em>
+              )}
             </div>
           ) : null}
           {statusText ? <p className={styles.status}>{statusText}</p> : null}

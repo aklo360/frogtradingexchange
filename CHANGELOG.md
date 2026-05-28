@@ -25,11 +25,13 @@
 - Pixel trophy, wallet, swap, and sparkle icons in `/public`.
 
 ### Changed
+- Enabled the DAEMON airdrop claim/reservation flow in production config while keeping automatic ERC20 payout flags off until the escrow signer secret is installed.
 - Header hamburger uses pixel wallet icon and includes XP readout when connected.
 - Leaderboard headers now match pixel SNES styling with neon accents.
 - Top 3 leaderboard rows highlight gold/silver/bronze (avatar halo + text glow).
 
 ### Fixed
+- Airdrop UI now distinguishes reserved claims from completed ERC20 payouts: claim status says “Reserved, not sent” until a payout transaction hash exists, the pool counter is labeled as unreserved supply, and paid claims link to Etherscan.
 - Airdrop claims now reserve deterministic FCFS `$DAEMON` amounts immediately at claim time, so successful claims show the amount instead of remaining in a queued state.
 - Airdrop queued state no longer says “Awaiting finalization,” since payout amounts are deterministic FCFS tiers and no VRF/random prize draw remains.
 - Swap confirmation now checks confirmed on-chain errors before showing success.
