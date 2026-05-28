@@ -528,7 +528,7 @@ export default function AirdropPage() {
               <span>{claim.status}</span>
               <strong>
                 {claim.amountDaemon === null
-                  ? "Awaiting finalization"
+                  ? "Queued for FCFS payout"
                   : `${claim.amountDaemon} $DAEMON`}
               </strong>
             </div>

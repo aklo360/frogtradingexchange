@@ -30,6 +30,7 @@
 - Top 3 leaderboard rows highlight gold/silver/bronze (avatar halo + text glow).
 
 ### Fixed
+- Airdrop queued state no longer says “Awaiting finalization,” since payout amounts are deterministic FCFS tiers and no VRF/random prize draw remains.
 - Swap confirmation now checks confirmed on-chain errors before showing success.
 - Swap execution now refreshes the executable quote immediately before signing instead of reusing a stale preview transaction.
 - Platform fee routing now verifies the fee token account exists and matches the fee mint before sending it to Titan; invalid fee accounts are skipped so swaps do not fail.
