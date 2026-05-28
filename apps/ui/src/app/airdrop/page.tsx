@@ -325,7 +325,7 @@ export default function AirdropPage() {
         claim: claimData.claim ?? null,
         stats: claimData.stats ?? stats,
       }));
-      setStatusText("Claim queued.");
+      setStatusText("Claim received.");
     } catch (caught) {
       const message =
         caught instanceof Error ? caught.message : "Claim could not be submitted.";
@@ -507,8 +507,10 @@ export default function AirdropPage() {
               <div>
                 <h3>Claim queue</h3>
                 <p>
-                {claim
-                  ? `Queued #${claim.sequence} with ${claim.frogCount} frogs.`
+                  {claim
+                    ? claim.amountDaemon
+                      ? `Claim #${claim.sequence}: ${claim.amountDaemon} $DAEMON for ${claim.frogCount} frogs.`
+                      : `Claim #${claim.sequence} received with ${claim.frogCount} frogs.`
                     : `Sign with your Solana frog wallet. ${fullPrizeMinFrogs}+ frogs gets 1 $DAEMON; 1+ gets 0.1. We cover all gas fees.`}
                 </p>
               </div>
@@ -518,17 +520,23 @@ export default function AirdropPage() {
                 disabled={!canClaim || loading}
                 onClick={submitClaim}
               >
-                {loading ? "Signing" : claim ? "Queued" : "Claim"}
+                {loading ? "Signing" : claim ? "Claim received" : "Claim"}
               </button>
             </div>
           </div>
 
           {claim ? (
             <div className={styles.result}>
-              <span>{claim.status}</span>
+              <span>
+                {claim.status === "won"
+                  ? "Claim received"
+                  : claim.status === "not_selected"
+                    ? "Pool exhausted"
+                    : "Claim received"}
+              </span>
               <strong>
                 {claim.amountDaemon === null
-                  ? "Queued for FCFS payout"
+                  ? "FCFS amount pending"
                   : `${claim.amountDaemon} $DAEMON`}
               </strong>
             </div>

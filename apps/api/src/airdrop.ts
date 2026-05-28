@@ -761,6 +761,7 @@ export class AirdropCoordinator {
   }
 
   getStats(config: AirdropConfig): CampaignStats {
+    this.allocatePendingClaims(config);
     const aggregate = this.state.storage.sql
       .exec<{
         total_claims: number;
@@ -788,6 +789,56 @@ export class AirdropCoordinator {
       finalized: Boolean(campaign?.finalized_at),
       vrfTx: campaign?.vrf_tx ?? null,
     };
+  }
+
+  allocatePendingClaims(config: AirdropConfig) {
+    const pending = this.state.storage.sql
+      .exec<ClaimRow>(
+        `SELECT * FROM claims
+         WHERE campaign_id = ?
+           AND (amount_units IS NULL OR status = 'queued')
+         ORDER BY sequence ASC`,
+        config.campaignId,
+      )
+      .toArray();
+    if (pending.length === 0) return;
+
+    const allocated = this.state.storage.sql
+      .exec<{ allocated_units: number | null }>(
+        `SELECT COALESCE(SUM(amount_units), 0) AS allocated_units
+         FROM claims
+         WHERE campaign_id = ? AND amount_units IS NOT NULL`,
+        config.campaignId,
+      )
+      .one().allocated_units ?? 0;
+    let remaining = Math.max(0, config.poolUnits - allocated);
+    const allocatedAt = new Date().toISOString();
+
+    for (const claim of pending) {
+      const tierAmount = calculateTierPrizeUnits({
+        frogCount: claim.frog_count,
+        minFrogs: config.minFrogs,
+        fullPrizeMinFrogs: config.fullPrizeMinFrogs,
+        minPrizeUnits: config.minPrizeUnits,
+        maxPrizeUnits: config.maxPrizeUnits,
+      });
+      const amount = tierAmount > 0 && remaining >= tierAmount ? tierAmount : 0;
+      const status = amount > 0 ? "won" : "not_selected";
+      remaining -= amount;
+
+      this.state.storage.sql.exec(
+        `UPDATE claims
+         SET amount_units = ?,
+           status = ?,
+           finalized_at = COALESCE(finalized_at, ?)
+         WHERE campaign_id = ? AND sol_address = ?`,
+        amount,
+        status,
+        allocatedAt,
+        config.campaignId,
+        claim.sol_address,
+      );
+    }
   }
 
   createChallenge(input: ChallengeInput, config: AirdropConfig) {
@@ -959,13 +1010,34 @@ export class AirdropCoordinator {
       .one();
     const sequence = sequenceRow.next_sequence;
     const now = new Date().toISOString();
+    this.allocatePendingClaims(config);
+    const allocatedUnits = this.state.storage.sql
+      .exec<{ allocated_units: number | null }>(
+        `SELECT COALESCE(SUM(amount_units), 0) AS allocated_units
+         FROM claims
+         WHERE campaign_id = ? AND amount_units IS NOT NULL`,
+        config.campaignId,
+      )
+      .one().allocated_units ?? 0;
+    const tierAmount = calculateTierPrizeUnits({
+      frogCount: frogs.length,
+      minFrogs: config.minFrogs,
+      fullPrizeMinFrogs: config.fullPrizeMinFrogs,
+      minPrizeUnits: config.minPrizeUnits,
+      maxPrizeUnits: config.maxPrizeUnits,
+    });
+    const amountUnits =
+      tierAmount > 0 && config.poolUnits - allocatedUnits >= tierAmount
+        ? tierAmount
+        : 0;
+    const claimStatus = amountUnits > 0 ? "won" : "not_selected";
 
     this.state.storage.sql.exec(
       `INSERT INTO claims (
         campaign_id, sol_address, eth_address, sequence, frog_count,
         frog_mints_json, sol_signature, eth_signature, message, nonce,
         amount_units, status, created_at, finalized_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'queued', ?, NULL)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       config.campaignId,
       solAddress,
       ethAddress,
@@ -976,6 +1048,9 @@ export class AirdropCoordinator {
       ethSignature || "",
       nonceRow.message,
       nonce,
+      amountUnits,
+      claimStatus,
+      now,
       now,
     );
 
@@ -1013,6 +1088,8 @@ export class AirdropCoordinator {
         metadata: {
           sequence,
           frogMints,
+          amountDaemon: unitsToDaemon(amountUnits),
+          status: claimStatus,
         },
       },
       config,
@@ -1055,41 +1132,8 @@ export class AirdropCoordinator {
       return { error: "Campaign already finalized", status: 409 };
     }
 
-    const claims = this.state.storage.sql
-      .exec<ClaimRow>(
-        "SELECT * FROM claims WHERE campaign_id = ? ORDER BY sequence ASC",
-        config.campaignId,
-      )
-      .toArray();
-
-    let remaining = config.poolUnits;
     const finalizedAt = new Date().toISOString();
-    for (const claim of claims) {
-      const amount = calculateTierPrizeUnits({
-        frogCount: claim.frog_count,
-        minFrogs: config.minFrogs,
-        fullPrizeMinFrogs: config.fullPrizeMinFrogs,
-        minPrizeUnits: config.minPrizeUnits,
-        maxPrizeUnits: config.maxPrizeUnits,
-      });
-      let payableAmount = 0;
-      let status = "not_selected";
-      if (amount > 0 && remaining >= amount) {
-        payableAmount = amount;
-        status = "won";
-      }
-      remaining -= payableAmount;
-      this.state.storage.sql.exec(
-        `UPDATE claims
-         SET amount_units = ?, status = ?, finalized_at = ?
-         WHERE campaign_id = ? AND sol_address = ?`,
-        payableAmount,
-        status,
-        finalizedAt,
-        config.campaignId,
-        claim.sol_address,
-      );
-    }
+    this.allocatePendingClaims(config);
 
     this.state.storage.sql.exec(
       `INSERT INTO campaign_state (campaign_id, vrf_seed, vrf_tx, finalized_at)
@@ -1115,16 +1159,7 @@ export class AirdropCoordinator {
     if (!boolFromEnv(this.env.AIRDROP_PAYOUT_ENABLED, false)) {
       return { error: "Airdrop payouts are not enabled", status: 403 };
     }
-
-    const campaign = this.state.storage.sql
-      .exec<CampaignStateRow>(
-        "SELECT * FROM campaign_state WHERE campaign_id = ? AND finalized_at IS NOT NULL",
-        config.campaignId,
-      )
-      .toArray()[0] ?? null;
-    if (!campaign) {
-      return { error: "Campaign must be finalized before payout", status: 409 };
-    }
+    this.allocatePendingClaims(config);
 
     const maxTransfers = getPayoutBatchSize(this.env, input.maxTransfers);
     const claims = this.state.storage.sql

@@ -120,7 +120,7 @@ pnpm dev                   # start Next.js (3000) + worker (8787)
    UI → `/api/frogx/*` → Pages worker → `frogx-api` Worker → Titan WebSocket/REST → normalized response (transaction base64, instructions, routing metadata).
 
 2. **DAEMON airdrop claims**
-   UI `/airdrop` → `/api/frogx/airdrop/*` → Worker Durable Object coordinator. Users sign a Solana claim proof binding their entered Ethereum payout address; Phantom/EVM signing is optional extra verification/autofill. The Worker verifies Business Frogs live via Solana DAS, records one FCFS claim per Solana wallet/ETH payout, and admin finalization assigns deterministic tiers: 1-9 frogs get `0.10` `$DAEMON`, 10+ frogs get `1.00` `$DAEMON`, until the 10 `$DAEMON` pool is exhausted. `POST /api/frogx/airdrop/payout` and scheduled autopayout only send when payout env switches, Ethereum RPC, escrow signer, token bytecode, escrow `$DAEMON`, and escrow ETH gas checks pass.
+   UI `/airdrop` → `/api/frogx/airdrop/*` → Worker Durable Object coordinator. Users sign a Solana claim proof binding their entered Ethereum payout address; Phantom/EVM signing is optional extra verification/autofill. The Worker verifies Business Frogs live via Solana DAS, records one FCFS claim per Solana wallet/ETH payout, and immediately reserves deterministic tiers: 1-9 frogs get `0.10` `$DAEMON`, 10+ frogs get `1.00` `$DAEMON`, until the 10 `$DAEMON` pool is exhausted. `POST /api/frogx/airdrop/payout` and scheduled autopayout only send when payout env switches, Ethereum RPC, escrow signer, token bytecode, escrow `$DAEMON`, and escrow ETH gas checks pass.
 
 3. **Wallet XP (client-side)**
    XP badge currently shows a placeholder (4,269 XP) once a wallet connects. Replace with real stats when Titan exposes XP API.

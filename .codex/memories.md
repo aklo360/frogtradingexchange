@@ -4,7 +4,7 @@ FTX (Frog Trading Exchange) is managed at `/Users/aklo/projects/ftx`. Git remote
 
 Stack: pnpm monorepo with Next.js 15 UI in `apps/ui` and Cloudflare Worker API in `apps/api`. Confirm before deploying or changing Cloudflare/Titan/Solana secrets.
 
-DAEMON airdrop is disabled by default: `/airdrop` UI plus Worker `/api/frogx/airdrop/*` and `AirdropCoordinator`. It requires at least 1 Business Frog and a Solana signature binding the entered ETH payout address; Phantom/EVM signature is optional. Finalization assigns FCFS tiers: 1-9 frogs get `0.10` `$DAEMON`, 10+ frogs get `1.00` `$DAEMON`, until the 10 `$DAEMON` pool is exhausted.
+DAEMON airdrop is disabled by default: `/airdrop` UI plus Worker `/api/frogx/airdrop/*` and `AirdropCoordinator`. It requires at least 1 Business Frog and a Solana signature binding the entered ETH payout address; Phantom/EVM signature is optional. Claim submission immediately reserves FCFS tiers: 1-9 frogs get `0.10` `$DAEMON`, 10+ frogs get `1.00` `$DAEMON`, until the 10 `$DAEMON` pool is exhausted.
 
 Payout config: token `0x43298327b0249caF5A4942C6951F5Ac6AD7297A0`, escrow `0xC853Fc4dE86fC8868Fa89FC3B207d4592Db19e46`, 18 decimals. Keep `AIRDROP_ENABLED=false`, `AIRDROP_PAYOUT_ENABLED=false`, and `AIRDROP_AUTO_PAYOUT_ENABLED=false` until token bytecode exists, escrow has 10 `$DAEMON`, escrow has ETH gas, and `AIRDROP_ETH_RPC_URL`/`AIRDROP_ESCROW_PRIVATE_KEY` Worker secrets are set.
 

@@ -17,7 +17,7 @@ The airdrop already lets a Solana wallet prove it holds enough Business Frogs an
 - [x] (2026-05-28) Run backend typecheck and unit tests.
 - [x] (2026-05-28) Run Wrangler dry-run packaging/config validation.
 - [x] (2026-05-28) Set available production secrets without exposing values: `AIRDROP_ADMIN_TOKEN` and `AIRDROP_ETH_RPC_URL`.
-- [x] (2026-05-28) Change prize logic from random/VRF quarter steps to deterministic tiers: 1-9 frogs get `0.10` `$DAEMON`, 10+ frogs get `1.00` `$DAEMON`, FCFS until pool exhaustion.
+- [x] (2026-05-28) Change prize logic from random/VRF quarter steps to immediate deterministic tiers: 1-9 frogs get `0.10` `$DAEMON`, 10+ frogs get `1.00` `$DAEMON`, FCFS until pool exhaustion.
 - [ ] Set `AIRDROP_ESCROW_PRIVATE_KEY` after AKLO provides the escrow signer or chooses a Safe/relayer path.
 - [ ] Leave final live claim and payout switches off until token bytecode exists and the escrow signer/gas are confirmed.
 
@@ -42,13 +42,13 @@ Backend payout implementation is complete locally. It is not live-enabled: the p
 
 Available production secrets were set without printing values. `AIRDROP_ESCROW_PRIVATE_KEY` remains intentionally unset because it must be the private key for the configured escrow address or replaced by a Safe/relayer integration.
 
-Prize logic is now deterministic and does not need VRF randomness: 1-9 frogs receive `0.10` `$DAEMON`, 10+ frogs receive `1.00` `$DAEMON`, and later claims are marked not selected once the 10 `$DAEMON` pool is exhausted.
+Prize logic is now deterministic and does not need VRF randomness: 1-9 frogs receive `0.10` `$DAEMON`, 10+ frogs receive `1.00` `$DAEMON`, and later claims are marked not selected once the 10 `$DAEMON` pool is exhausted. Amounts are reserved at claim time; old queued claims are backfilled on status/export/payout reads.
 
 ## Context and Orientation
 
 This repository is `/Users/aklo/projects/ftx`. The backend lives in `apps/api` as a Cloudflare Worker. The airdrop coordinator is `apps/api/src/airdrop.ts`; it uses a Durable Object, which is a small Cloudflare-hosted stateful object with SQLite storage. Public routes are wired in `apps/api/src/index.ts`. Worker environment variable names are typed in `apps/api/src/env.ts` and non-secret defaults are in `apps/api/wrangler.toml`.
 
-The existing airdrop stores claims, assigns deterministic tiered `$DAEMON` prizes during finalization, and exports payout rows. `$DAEMON` is an ERC20 token on Ethereum mainnet. Sending it automatically requires an Ethereum RPC URL and a private key for the configured escrow wallet, both stored as Cloudflare Worker secrets. Gas means ETH in the escrow wallet to pay Ethereum transaction fees.
+The existing airdrop stores claims, reserves deterministic tiered `$DAEMON` prizes when a claim is accepted, and exports payout rows. `$DAEMON` is an ERC20 token on Ethereum mainnet. Sending it automatically requires an Ethereum RPC URL and a private key for the configured escrow wallet, both stored as Cloudflare Worker secrets. Gas means ETH in the escrow wallet to pay Ethereum transaction fees.
 
 ## Plan of Work
 

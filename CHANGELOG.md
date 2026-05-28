@@ -30,6 +30,7 @@
 - Top 3 leaderboard rows highlight gold/silver/bronze (avatar halo + text glow).
 
 ### Fixed
+- Airdrop claims now reserve deterministic FCFS `$DAEMON` amounts immediately at claim time, so successful claims show the amount instead of remaining in a queued state.
 - Airdrop queued state no longer says “Awaiting finalization,” since payout amounts are deterministic FCFS tiers and no VRF/random prize draw remains.
 - Swap confirmation now checks confirmed on-chain errors before showing success.
 - Swap execution now refreshes the executable quote immediately before signing instead of reusing a stale preview transaction.
