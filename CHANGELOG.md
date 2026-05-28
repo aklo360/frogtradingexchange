@@ -8,6 +8,7 @@
 - Set production Cloudflare Worker secret names for `AIRDROP_ADMIN_TOKEN` and `AIRDROP_ETH_RPC_URL`; `AIRDROP_ESCROW_PRIVATE_KEY` remains unset pending the escrow signer.
 - Created temporary Solana deposit wallet `7p8n64DoGj1kQ2ChT7mXvbztVgjQEgESgrrqExryoNay` for DAEMON airdrop ETH gas bridging; private key stored in `~/.secrets.env:FROGX_DAEMON_GAS_SOL_DEPOSIT_SECRET_20260528180237`.
 - Bridged `0.12 SOL` from the temporary deposit wallet to Ethereum mainnet escrow gas via deBridge order `0xe0b7ac08e8b0e4ecc19f79be011d1f4ce54b20b628d52eb2e6ac80f5def2d57a`; Solana creation tx `4TsdedhxEyyPa31RWHEigxERa1gKpmoAUGNTJKtpPBzpRVbK1TMqqLSvo1HA1khasNFGks2AAdxRE1sv2Km6yQFQ`, Ethereum fulfillment tx `0x48132942dcca7f67fafa39db8d06b83c28dfd7f7d929cbe759bbba6a91a9ad19`.
+- Consolidated `0.0073 SOL` more into the temporary gas wallet via txs `A1RbohNvDCZFmjdXZYpkfWHV5jrUzSoQt2J5cUru4XJdFB3JpHCQgFyRnQTtEPvYrm1sCPc9hm4Wvqoq7d7B1PQ` and `2bLrmYrqov7XySCr6t2nKrWphTkhGHadik9wpQPKDGUWahiGV4e7DhiGW2EPKWexGY9YMcrJRVLqSq4v5fw7rxPC`; deBridge still rejected the usable amount as below current economic minimum after transaction rent/fee headroom.
 
 ### Added
 - DAEMON airdrop claim flow gated to wallets holding at least 1 Solana Business Frog, with a 10+ frog full-prize tier.
