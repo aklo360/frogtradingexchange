@@ -1,0 +1,315 @@
+.panel {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  width: 100%;
+  max-width: 820px;
+  padding: 2.1rem;
+  border-radius: 22px;
+  background: rgba(12, 6, 53, 0.88);
+  box-shadow:
+    0 0 24px rgba(20, 241, 149, 0.35),
+    0 0 48px rgba(20, 241, 149, 0.2),
+    0 0 32px rgba(0, 0, 0, 0.45),
+    inset 0 0 8px rgba(153, 69, 255, 0.4);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: #eafdf4;
+  font-family: var(--font-press-start), var(--font-geist-sans), system-ui, sans-serif;
+}
+
+.panel::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 24px;
+  padding: 2px;
+  --angle: 0deg;
+  background: conic-gradient(from var(--angle), #00eaff 0, #14f195 50%, #00eaff 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0) border-box;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0) border-box;
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: panel-shift 8s linear infinite;
+  z-index: 0;
+}
+
+@property --angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes panel-shift {
+  to {
+    --angle: 360deg;
+  }
+}
+
+.header,
+.summaryGrid,
+.notice,
+.steps,
+.result,
+.status,
+.error {
+  position: relative;
+  z-index: 1;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1.4rem;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(20, 241, 149, 0.25), rgba(153, 69, 255, 0.35));
+  color: #14f195;
+  font-size: 0.54rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.header h2 {
+  margin: 0.75rem 0 0;
+  color: #eafdf4;
+  font-size: 1.1rem;
+  letter-spacing: 0.08em;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.claimButton,
+.ethControls button {
+  border: 1px solid rgba(148, 255, 239, 0.4);
+  border-radius: 999px;
+  background: rgba(8, 2, 30, 0.72);
+  color: rgba(148, 255, 239, 0.9);
+  font-family: var(--font-press-start), var(--font-geist-sans), system-ui, sans-serif;
+  font-size: 0.5rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.55rem 0.8rem;
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+
+.claimButton:hover:not(:disabled),
+.ethControls button:hover {
+  border-color: rgba(20, 241, 149, 0.75);
+  color: #14f195;
+  background: rgba(20, 241, 149, 0.12);
+}
+
+.claimButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.summaryGrid div,
+.step,
+.notice,
+.result,
+.status,
+.error {
+  border: 2px solid rgba(153, 69, 255, 0.45);
+  border-radius: 18px;
+  background: rgba(8, 2, 30, 0.78);
+}
+
+.summaryGrid div {
+  min-width: 0;
+  padding: 1rem;
+}
+
+.summaryGrid span,
+.result span {
+  display: block;
+  margin-bottom: 0.45rem;
+  color: rgba(234, 253, 244, 0.68);
+  font-size: 0.5rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.summaryGrid strong,
+.result strong {
+  display: block;
+  color: #eafdf4;
+  font-size: 0.98rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.notice {
+  padding: 1rem 1.2rem;
+  border-color: rgba(255, 214, 102, 0.36);
+  color: #ffe08a;
+  font-size: 0.58rem;
+  line-height: 1.65;
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 2.15rem minmax(0, 1fr) minmax(12rem, auto);
+  align-items: center;
+  gap: 0.95rem;
+  padding: 1rem 1.15rem;
+}
+
+.stepDisabled {
+  opacity: 0.52;
+}
+
+.stepIndex {
+  display: inline-flex;
+  width: 2.15rem;
+  height: 2.15rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: #14f195;
+  color: #08021e;
+  font-size: 0.62rem;
+}
+
+.step h3 {
+  margin: 0 0 0.38rem;
+  color: rgba(234, 253, 244, 0.95);
+  font-size: 0.58rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.step p {
+  margin: 0;
+  color: rgba(234, 253, 244, 0.66);
+  font-size: 0.56rem;
+  line-height: 1.6;
+  text-wrap: balance;
+}
+
+.step:first-child p {
+  white-space: nowrap;
+}
+
+.ethControls {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.ethControls input {
+  width: min(18rem, 34vw);
+  border: 1px solid rgba(148, 255, 239, 0.4);
+  border-radius: 999px;
+  background: rgba(12, 6, 53, 0.78);
+  color: #eafdf4;
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  padding: 0.62rem 0.9rem;
+}
+
+.ethControls input:disabled,
+.ethControls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ethControls input:focus {
+  outline: 2px solid rgba(20, 241, 149, 0.58);
+  outline-offset: 2px;
+}
+
+.result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.2rem;
+  border-color: rgba(20, 241, 149, 0.5);
+}
+
+.status,
+.error {
+  padding: 0.95rem 1.1rem;
+  font-size: 0.58rem;
+  line-height: 1.65;
+}
+
+.status {
+  border-color: rgba(20, 241, 149, 0.42);
+  color: #a9ffd8;
+}
+
+.error {
+  border-color: rgba(255, 122, 156, 0.42);
+  color: #ffb7c9;
+}
+
+@media (max-width: 768px) {
+  .panel {
+    padding: 1.25rem;
+    border-radius: 18px;
+  }
+
+  .panel::before {
+    border-radius: 20px;
+  }
+
+  .header {
+    flex-direction: column;
+  }
+
+  .header h2 {
+    font-size: 0.92rem;
+  }
+
+  .summaryGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .step {
+    grid-template-columns: 2.15rem minmax(0, 1fr);
+  }
+
+  .step:first-child p {
+    white-space: normal;
+  }
+
+  .step > .ethControls,
+  .step > .claimButton {
+    grid-column: 1 / -1;
+  }
+
+  .ethControls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ethControls input,
+  .ethControls button,
+  .claimButton {
+    width: 100%;
+  }
+}

@@ -116,6 +116,21 @@ export default function Home() {
             <div className={styles.menuWalletWrapper} onClick={closeMenu}>
               <WalletButton className={styles.menuWallet} />
             </div>
+            <button
+              type="button"
+              className={styles.menuItem}
+              onClick={() => {
+                closeMenu();
+                router.push("/airdrop");
+              }}
+            >
+              <img
+                src="/sparkle.svg"
+                alt=""
+                className={`${styles.menuIcon} ${styles.pixelIcon}`}
+              />
+              <span>AIRDROP</span>
+            </button>
             {connected && !isV1 ? (
               <button
                 type="button"

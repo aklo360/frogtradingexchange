@@ -97,6 +97,8 @@ try {
     console.log(
       `#${index + 1} ${item.id} | interface=${item.interface} | compressed=${
         item.compression?.compressed ?? false
+      } | owner=${item.ownership?.owner ?? "unknown"} | burnt=${
+        item.burnt ?? false
       }`,
     );
     console.log(`    image/link: ${image}`);

@@ -5,11 +5,12 @@
 ### Directory Layout
 
 ```
-apps/
-  api/                          # Cloudflare Worker (Wrangler)
+  apps/
+    api/                          # Cloudflare Worker (Wrangler)
     package.json
     wrangler.toml
     src/
+      airdrop.ts                # DAEMON holder-gated airdrop coordinator + APIs
       env.ts                    # Environment variable parsing + validation
       routes.ts                 # REST handlers for /info, /quotes, /swap
       titan.ts                  # Titan WebSocket client + quote normalization
@@ -31,6 +32,7 @@ apps/
         layout.tsx              # Root layout + font wiring
         page.tsx                # Landing page, embeds <Ticker/> + <SwapCard/>
         page.module.css         # Hero layout, ticker animation, header chrome
+        airdrop/                # DAEMON claim page (home shell + Solana frog gate + ETH payout)
         leaderboard/            # Ribbit XP leaderboard route + styling
         profile/               # Player profile hub (wardrobe, stats, quests)
         icon.tsx                # Inline PNG favicon for Next metadata route
@@ -69,6 +71,7 @@ package.json                    # Workspace scripts (incl. deploy:prod)
 pnpm install               # bootstrap workspace
 pnpm dev                   # start Next.js (3000) + worker (8787)
   └─ scripts/dev-worker.mjs loads root .env and forwards TITAN_/SOLANA_/QUOTE_ vars
+     (`NEXT_PUBLIC_SOLANA_RPC_URL` is reused as `SOLANA_RPC_URL` locally only)
 ```
 
 `apps/ui/next.config.ts` rewrites `/api/*` and `/rpc` to `http://localhost:8787/*` during dev, so the browser talks to the same endpoints as production.
@@ -84,17 +87,23 @@ pnpm dev                   # start Next.js (3000) + worker (8787)
   - Optional: `API_ORIGIN` to point `/api/*` to a different worker base URL
 - **UI build flag**:
   - `NEXT_PUBLIC_FROGX_VERSION` = `v1` (swap-only + buyback burn bar) or `v2` (full profile/leaderboard build)
-- UI **does not** need `NEXT_PUBLIC_SOLANA_RPC_URL` if you rely on `/rpc` proxy.
+- UI **does not** need `NEXT_PUBLIC_SOLANA_RPC_URL` if you rely on `/rpc` proxy. In local dev only, `scripts/dev-worker.mjs` can reuse it as `SOLANA_RPC_URL` for Worker eligibility checks if no server-side RPC var is set.
 - Platform fees (currently disabled by default): flip `PLATFORM_FEE_ENABLED=true` when Titan enables fee management for our token, then set `PLATFORM_FEE_BPS`, `PLATFORM_FEE_RECIPIENT`, and optional `PLATFORM_FEE_{TOKEN}_ACCOUNT` env vars to direct SOL/USDC/USDT fees to specific ATAs.
 - **Buyback automation (Worker secrets)**:
   - `BUYBACK_ENABLED`, `BUYBACK_DRY_RUN`, `BUYBACK_WALLET_SECRET`, `BUYBACK_WALLET_ADDRESS`
   - `BUYBACK_SOL_RESERVE`, `BUYBACK_MIN_SWAP_USDC`, `BUYBACK_MIN_SWAP_USDT`, `BUYBACK_SWAP_SLIPPAGE_BPS`, `BUYBACK_PRIORITY_FEE`
   - `ME_API_*` (Magic Eden creds + endpoints) and `SOL_INCINERATOR_*` (burn API creds + endpoints)
+- **DAEMON airdrop (Worker vars/secrets)**:
+  - `AIRDROP_ENABLED=false` by default; do not enable until claim dates, live token bytecode, escrow token balance, escrow ETH gas, and payout signer process are confirmed.
+  - `AIRDROP_CAMPAIGN_ID`, `AIRDROP_COLLECTION_ADDRESS`, `AIRDROP_DAEMON_TOKEN_ADDRESS`, `AIRDROP_ESCROW_ADDRESS`, `AIRDROP_DAEMON_DECIMALS`, `AIRDROP_MIN_FROGS`, `AIRDROP_FULL_PRIZE_MIN_FROGS`, `AIRDROP_POOL_DAEMON`, `AIRDROP_MIN_PRIZE_DAEMON`, `AIRDROP_MAX_PRIZE_DAEMON`
+  - Optional `AIRDROP_CLAIM_OPEN_AT`, `AIRDROP_CLAIM_CLOSE_AT`
+  - `AIRDROP_PAYOUT_ENABLED=false` and `AIRDROP_AUTO_PAYOUT_ENABLED=false` by default; keep them false until launch. `AIRDROP_ETH_RPC_URL` and `AIRDROP_ESCROW_PRIVATE_KEY` are required Worker secrets for automatic ERC20 sends.
+  - `AIRDROP_ADMIN_TOKEN` is required for `/api/frogx/airdrop/finalize`, `/api/frogx/airdrop/payout`, and `/api/frogx/airdrop/export`; store as a Worker secret only.
 
 ## 4. Commands
 
 - Frontend: `pnpm --filter @frogx/ui run dev|build|lint|test`
-- Backend: `pnpm --filter @frogx/api run dev|deploy`
+- Backend: `pnpm --filter @frogx/api run dev|deploy|test`
 - Full deployment: `pnpm run deploy:prod`
   ```
   pnpm install --frozen-lockfile
@@ -110,13 +119,16 @@ pnpm dev                   # start Next.js (3000) + worker (8787)
 1. **Quotes & swaps**  
    UI → `/api/frogx/*` → Pages worker → `frogx-api` Worker → Titan WebSocket/REST → normalized response (transaction base64, instructions, routing metadata).
 
-2. **Wallet XP (client-side)**  
+2. **DAEMON airdrop claims**
+   UI `/airdrop` → `/api/frogx/airdrop/*` → Worker Durable Object coordinator. Users sign a Solana claim proof binding their entered Ethereum payout address; Phantom/EVM signing is optional extra verification/autofill. The Worker verifies Business Frogs live via Solana DAS, records one FCFS claim per Solana wallet/ETH payout, and admin finalization assigns deterministic tiers: 1-9 frogs get `0.10` `$DAEMON`, 10+ frogs get `1.00` `$DAEMON`, until the 10 `$DAEMON` pool is exhausted. `POST /api/frogx/airdrop/payout` and scheduled autopayout only send when payout env switches, Ethereum RPC, escrow signer, token bytecode, escrow `$DAEMON`, and escrow ETH gas checks pass.
+
+3. **Wallet XP (client-side)**
    XP badge currently shows a placeholder (4,269 XP) once a wallet connects. Replace with real stats when Titan exposes XP API.
 
-3. **Wallet RPC**  
+4. **Wallet RPC**
    UI → `/rpc` → Pages worker → private `SOLANA_RPC_URL` (Helius). Keeps RPC key server-side while dApps use the proxy.
 
-4. **Live token data**  
+5. **Live token data**
    UI fetches Jupiter Token API v2:
    - `tokens/v2/tag?query=verified` (baseline)
    - `tokens/v2/toporganicscore/5m?limit=50` (suggested + ticker)

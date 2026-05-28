@@ -1,4 +1,15 @@
 import type { Env } from "./env";
+import {
+  getAirdrop,
+  getAirdropEligibility,
+  getAirdropExport,
+  AirdropCoordinator,
+  postAirdropChallenge,
+  postAirdropClaim,
+  postAirdropFinalize,
+  postAirdropPayout,
+  runAirdropPayout,
+} from "./airdrop";
 import { runBuyback } from "./buyback";
 import {
   getBuyback,
@@ -113,6 +124,50 @@ export default {
     if (url.pathname === "/api/frogx/info" && request.method === "GET") {
       return getInfo(env);
     }
+    if (
+      (url.pathname === "/api/frogx/airdrop" ||
+        url.pathname === "/api/frogx/airdrop/config" ||
+        url.pathname === "/api/frogx/airdrop/status") &&
+      request.method === "GET"
+    ) {
+      return getAirdrop(request, env);
+    }
+    if (
+      url.pathname === "/api/frogx/airdrop/eligibility" &&
+      request.method === "GET"
+    ) {
+      return getAirdropEligibility(request, env);
+    }
+    if (
+      url.pathname === "/api/frogx/airdrop/challenge" &&
+      request.method === "POST"
+    ) {
+      return postAirdropChallenge(request, env);
+    }
+    if (
+      url.pathname === "/api/frogx/airdrop/claim" &&
+      request.method === "POST"
+    ) {
+      return postAirdropClaim(request, env);
+    }
+    if (
+      url.pathname === "/api/frogx/airdrop/finalize" &&
+      request.method === "POST"
+    ) {
+      return postAirdropFinalize(request, env);
+    }
+    if (
+      url.pathname === "/api/frogx/airdrop/payout" &&
+      request.method === "POST"
+    ) {
+      return postAirdropPayout(request, env);
+    }
+    if (
+      url.pathname === "/api/frogx/airdrop/export" &&
+      request.method === "GET"
+    ) {
+      return getAirdropExport(request, env);
+    }
     if (url.pathname === "/api/frogx/buyback" && request.method === "GET") {
       return getBuyback(env);
     }
@@ -140,7 +195,14 @@ export default {
     }
     return new Response("Not found", { status: 404 });
   },
-  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+  async scheduled(
+    _event: ScheduledController,
+    env: Env,
+    ctx: ExecutionContext,
+  ) {
     ctx.waitUntil(runBuyback(env));
+    ctx.waitUntil(runAirdropPayout(env));
   },
 } satisfies ExportedHandler<Env>;
+
+export { AirdropCoordinator };
