@@ -10,6 +10,8 @@
 - Bridged `0.12 SOL` from the temporary deposit wallet to Ethereum mainnet escrow gas via deBridge order `0xe0b7ac08e8b0e4ecc19f79be011d1f4ce54b20b628d52eb2e6ac80f5def2d57a`; Solana creation tx `4TsdedhxEyyPa31RWHEigxERa1gKpmoAUGNTJKtpPBzpRVbK1TMqqLSvo1HA1khasNFGks2AAdxRE1sv2Km6yQFQ`, Ethereum fulfillment tx `0x48132942dcca7f67fafa39db8d06b83c28dfd7f7d929cbe759bbba6a91a9ad19`.
 - Consolidated `0.0073 SOL` more into the temporary gas wallet via txs `A1RbohNvDCZFmjdXZYpkfWHV5jrUzSoQt2J5cUru4XJdFB3JpHCQgFyRnQTtEPvYrm1sCPc9hm4Wvqoq7d7B1PQ` and `2bLrmYrqov7XySCr6t2nKrWphTkhGHadik9wpQPKDGUWahiGV4e7DhiGW2EPKWexGY9YMcrJRVLqSq4v5fw7rxPC`; deBridge still rejected the usable amount as below current economic minimum after transaction rent/fee headroom.
 - Created new controllable Ethereum airdrop escrow `0x2c475831b645620A2bE61f1435c2863242470B71`, funded it with `0.01 ETH`, and set its signer as the production Worker secret `AIRDROP_ESCROW_PRIVATE_KEY`; the new escrow still needs `10 $DAEMON` before payout flags can be enabled.
+- Replaced the production `AIRDROP_ESCROW_PRIVATE_KEY` with the original escrow signer after verifying the seed derives `0xC853Fc4dE86fC8868Fa89FC3B207d4592Db19e46`, moved `0.009 ETH` from the new escrow to the original escrow in tx `0xbf2264236ec8677e693507d8bb1eac6e72529fc372afd881c288675c2abf87ad`, and enabled payout/autopayout flags.
+- Deployed payout-enabled Worker version `62dd0d2c-86fe-4346-888c-753f86d5f9ad` and sent claim #1 payout of `0.10 $DAEMON` to `0xF39221B3382879B35cE360344406937C21d1ee90` in tx `0x1e1c7607714dc7fa9acc6c1e192cc288375d50319a8d1b7dedaef300694b04d2`.
 
 ### Added
 - DAEMON airdrop claim flow gated to wallets holding at least 1 Solana Business Frog, with a 10+ frog full-prize tier.
