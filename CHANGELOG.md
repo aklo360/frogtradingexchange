@@ -14,6 +14,7 @@
 - Deployed payout-enabled Worker version `62dd0d2c-86fe-4346-888c-753f86d5f9ad` and sent claim #1 payout of `0.10 $DAEMON` to `0xF39221B3382879B35cE360344406937C21d1ee90` in tx `0x1e1c7607714dc7fa9acc6c1e192cc288375d50319a8d1b7dedaef300694b04d2`.
 
 ### Added
+- Read-only `/perps` terminal prototype with Imperial market data, Coinbase-backed 15-minute candlestick charts for supported markets, route preview, funding/cost panels, GMGN chart links for mapped Solana assets, and a `PERPS` hamburger menu link.
 - DAEMON airdrop claim flow gated to wallets holding at least 1 Solana Business Frog, with a 10+ frog full-prize tier.
 - Cloudflare Durable Object coordinator for airdrop claim ordering, duplicate prevention, used Frog mint tracking, and FCFS tiered payout finalization.
 - Airdrop API endpoints for config/status, challenge creation, claim submission, admin finalization, and admin export.
@@ -29,8 +30,11 @@
 - Pixel trophy, wallet, swap, and sparkle icons in `/public`.
 
 ### Changed
+- Perps charts now use TradingView Lightweight Charts instead of the hand-drawn SVG candle renderer.
+- Background music now defaults to muted, and the perps page includes the shared header mute/unmute button.
+- Replaced the shared top-right wallet-shaped navigation trigger with a hamburger icon while keeping the airdrop reachable from the menu.
 - Enabled the DAEMON airdrop claim/reservation flow in production config while keeping automatic ERC20 payout flags off until the escrow signer secret is installed.
-- Header hamburger uses pixel wallet icon and includes XP readout when connected.
+- Header navigation includes XP readout when connected.
 - Leaderboard headers now match pixel SNES styling with neon accents.
 - Top 3 leaderboard rows highlight gold/silver/bronze (avatar halo + text glow).
 

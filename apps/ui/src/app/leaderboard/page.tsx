@@ -156,7 +156,7 @@ export default function LeaderboardPage() {
             aria-expanded={menuOpen}
             onClick={toggleMenu}
           >
-            <img src="/wallet.svg" alt="" className={homeStyles.menuButtonIcon} />
+            <span className={homeStyles.menuButtonBars} aria-hidden="true" />
           </button>
         </div>
         <div
@@ -169,6 +169,21 @@ export default function LeaderboardPage() {
             <div className={homeStyles.menuWalletWrapper} onClick={closeMenu}>
               <WalletButton className={homeStyles.menuWallet} />
             </div>
+            <button
+              type="button"
+              className={homeStyles.menuItem}
+              onClick={() => {
+                closeMenu();
+                router.push("/perps");
+              }}
+            >
+              <img
+                src="/sparkle.svg"
+                alt=""
+                className={`${homeStyles.menuIcon} ${homeStyles.pixelIcon}`}
+              />
+              <span>PERPS</span>
+            </button>
             {connected && !isV1 ? (
               <button
                 type="button"

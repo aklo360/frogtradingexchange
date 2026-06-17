@@ -227,12 +227,15 @@
   box-shadow: 0 0 20px rgba(20, 241, 149, 0.35);
 }
 
-.menuButtonIcon {
-  width: 24px;
-  height: 24px;
+.menuButtonBars {
+  width: 20px;
+  height: 16px;
+  background:
+    linear-gradient(#14f195, #14f195) 0 0 / 100% 3px no-repeat,
+    linear-gradient(#14f195, #14f195) 0 50% / 100% 3px no-repeat,
+    linear-gradient(#14f195, #14f195) 0 100% / 100% 3px no-repeat;
   image-rendering: pixelated;
-  filter: invert(71%) sepia(67%) saturate(637%) hue-rotate(92deg)
-    brightness(96%) contrast(95%);
+  filter: drop-shadow(0 0 5px rgba(20, 241, 149, 0.55));
 }
 
 .menuButton:hover {
@@ -444,7 +447,6 @@
   gap: 1.4rem;
   z-index: 3;
 }
-
 
 .main::before {
   content: "";

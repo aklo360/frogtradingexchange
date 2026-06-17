@@ -10,6 +10,7 @@
 ## App Layout
 
 - `apps/ui`: Next.js 15 App Router frontend for Frog Trading Exchange.
+- `apps/ui/src/app/perps`: Read-only Imperial perps terminal prototype. It consumes public Imperial endpoints for market data, status, stats, and route previews; it renders TradingView Lightweight Charts candlesticks from Coinbase 15-minute candles for supported markets and links to GMGN kline charts for mapped Solana token assets. Live order placement is intentionally disabled until Imperial auth, deposit signing, order-bot health, and rejected-order handling are validated end to end.
 - `apps/api`: Cloudflare Worker API for Titan quote/swap integration.
 - `apps/api/src/airdrop.ts`: DAEMON airdrop API and `AirdropCoordinator` Durable Object. It stores claim challenges, queued claims, used Frog mint IDs, finalization state, payout transaction hashes/status, and wallet event rows.
 - `packages/shared`: placeholder shared workspace package.
@@ -21,6 +22,7 @@
 - UI dev rewrites `/api/*` and `/rpc` to the local Worker.
 - `scripts/dev-worker.mjs` loads root `.env*` files and writes forwarded Worker env into ignored `apps/api/.dev.vars` with owner-only permissions before starting Wrangler. Do not reintroduce secret-bearing `--var` command-line args.
 - The airdrop route `/airdrop` is live for claim/reservation intake: `AIRDROP_ENABLED=true` in `wrangler.toml`. It uses the same home shell but disables background music on that route. Claim submission immediately reserves FCFS tiers from claim-time frog count: 1-9 frogs receive `0.10` `$DAEMON`, 10+ frogs receive `1.00` `$DAEMON`, until the 10 `$DAEMON` pool is exhausted. The UI must describe this as reserved, not airdropped, until a payout transaction hash exists. Enabling sends additionally requires `AIRDROP_PAYOUT_ENABLED=true`, optional `AIRDROP_AUTO_PAYOUT_ENABLED=true`, Worker secrets `AIRDROP_ETH_RPC_URL` and `AIRDROP_ESCROW_PRIVATE_KEY`, live Ethereum token bytecode, escrow `$DAEMON` balance, and escrow ETH gas.
+- The perps route `/perps` is read-only. It should not submit Imperial orders until the JWT delegation flow, USDC profile deposit/withdraw transaction signing, `/status.orderBot` health gating, and `success:false` trading-response handling are implemented and tested.
 - DAEMON payout metadata is first-class Worker config: token `0x43298327b0249caF5A4942C6951F5Ac6AD7297A0`, escrow `0xC853Fc4dE86fC8868Fa89FC3B207d4592Db19e46`, 18 decimals. Admin export includes human `$DAEMON` amounts and ERC20 base-unit amounts.
 - Airdrop frog counts use Solana DAS `searchAssets`, so local/prod eligibility requires a DAS-capable RPC such as Helius. Without it the UI must keep the payout/claim steps disabled.
 - Production deployment is `pnpm run deploy:prod`, which deploys the API Worker and Cloudflare Pages UI. Confirm target/environment before any deploy.

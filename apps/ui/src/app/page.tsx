@@ -105,7 +105,7 @@ export default function Home() {
             aria-expanded={menuOpen}
             onClick={toggleMenu}
           >
-            <img src="/wallet.svg" alt="" className={styles.menuButtonIcon} />
+            <span className={styles.menuButtonBars} aria-hidden="true" />
           </button>
         </div>
         <div
@@ -116,6 +116,21 @@ export default function Home() {
             <div className={styles.menuWalletWrapper} onClick={closeMenu}>
               <WalletButton className={styles.menuWallet} />
             </div>
+            <button
+              type="button"
+              className={styles.menuItem}
+              onClick={() => {
+                closeMenu();
+                router.push("/perps");
+              }}
+            >
+              <img
+                src="/sparkle.svg"
+                alt=""
+                className={`${styles.menuIcon} ${styles.pixelIcon}`}
+              />
+              <span>PERPS</span>
+            </button>
             <button
               type="button"
               className={styles.menuItem}

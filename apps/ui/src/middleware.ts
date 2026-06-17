@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
 
 /**
  * Security middleware for Next.js
  * Adds security headers to all responses
  */
-export function middleware(request: NextRequest) {
+export function middleware() {
   const response = NextResponse.next();
 
   // Prevent clickjacking attacks
@@ -44,6 +43,8 @@ export function middleware(request: NextRequest) {
     "connect-src 'self' https: wss:",
     // Allow media from self and HTTPS
     "media-src 'self' https: blob:",
+    // Allow the embedded GMGN kline chart on the perps terminal
+    "frame-src 'self' https://www.gmgn.cc",
     // Prevent embedding in frames
     "frame-ancestors 'none'",
     // Block object/embed/applet

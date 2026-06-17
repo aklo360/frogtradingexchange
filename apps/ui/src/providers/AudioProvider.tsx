@@ -21,7 +21,7 @@ const AudioContext = createContext<AudioContextValue | undefined>(undefined);
 
 export const AudioProvider = ({ children }: { children: ReactNode }) => {
   const pathname = usePathname();
-  const [muted, setMuted] = useState(false);
+  const [muted, setMuted] = useState(true);
   const audioEnabled = pathname !== "/airdrop";
 
   const toggleMuted = useCallback(() => {
