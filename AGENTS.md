@@ -92,6 +92,7 @@ pnpm dev                   # start Next.js (3000) + worker (8787)
 - **Ribbot trading bot wallet provisioning (Worker secrets)**:
   - `PRIVY_APP_ID`, `PRIVY_APP_SECRET`, optional `PRIVY_API_BASE_URL`
   - Optional signer/policy support: `PRIVY_AUTHORIZATION_KEY_ID`, `PRIVY_AUTHORIZATION_PRIVATE_KEY`, `PRIVY_WALLET_POLICY_IDS`
+  - FTX accepts deployed compatibility aliases `PRIVY_SIGNER_ID` for `PRIVY_AUTHORIZATION_KEY_ID` and `FROGX_BOT_API_TOKEN` for `RIBBOT_TRADING_BOT_TOKEN`. Prefer canonical names for new environments; do not rotate working secrets merely to rename them.
   - There is currently no FTX browser client for Ribbot or Privy wallet controls. Public identifiers `NEXT_PUBLIC_PRIVY_APP_ID`, `NEXT_PUBLIC_PRIVY_BOT_SIGNER_ID`, and optional comma-separated `NEXT_PUBLIC_PRIVY_BOT_POLICY_IDS` remain reserved for a future explicitly approved client. These IDs are not secrets; never expose `PRIVY_APP_SECRET` or `PRIVY_AUTHORIZATION_PRIVATE_KEY` through `NEXT_PUBLIC_*`.
   - `RIBBOT_TRADING_BOT_TOKEN` protects Ribbot-only trading-bot endpoints. Ribbot should send this as `RIBBOT_FTX_API_TOKEN`; Ribbot must not hold Privy app secrets or authorization private keys directly.
   - `TRADING_BOT_OPERATOR_TOKEN` separately protects the pull-based manual-review list/acknowledge/reconcile API. It must stay out of Ribbot and browser bundles. Acknowledge is audit-only; reconcile invokes existing Privy GET-only status paths and may resolve a case only from terminal provider/bundle evidence. There is no force-success/force-failure route.

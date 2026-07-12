@@ -101,6 +101,8 @@
 - Top 3 leaderboard rows highlight gold/silver/bronze (avatar halo + text glow).
 
 ### Fixed
+- Restored Privy wallet readiness against the existing production configuration. The Worker now publishes the known public Privy app ID and accepts the deployed `FROGX_BOT_API_TOKEN` and `PRIVY_SIGNER_ID` aliases while retaining the canonical `RIBBOT_TRADING_BOT_TOKEN` and `PRIVY_AUTHORIZATION_KEY_ID` names. No Privy secret, wallet, signer, policy, or live-execution gate was changed.
+- Corrected the Tapestry production base URL from the obsolete `/api/v1` path to the documented `/v1` path, with a regression test covering wallet-profile lookup.
 - Restored the Pages-owned Tapestry profile API instead of proxying it to the FTX API Worker. Cloudflare-safe response construction, resilient optional profile enrichment, and visible creation errors allow the profile creation flow to complete or report the provider failure instead of appearing to do nothing.
 - FTX no longer reports missing or unavailable Titan quote probing as a generic automation status. Instant Auto Buy, copytrade buys, bundle buys, sniper buys, and token-specific auto-buy now state that liquidity and price impact were not verified and that the result is not a safety pass; execution remains blocked before Privy.
 - Advanced auto-buy/auto-sell responses can no longer remain staged and replay on a later cron after FTX loses the Privy response. Competing monitor runs cannot send the same claimed config, and reconciliation confirmation now contributes the canonical deterministic `swap_executed` event used by activity and estimated PNL.

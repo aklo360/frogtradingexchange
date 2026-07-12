@@ -1324,7 +1324,7 @@ export async function getTradingBotConfig(env: Env): Promise<Response> {
   const titanConfig = getTitanConfig(env);
   const feeConfig = getPlatformFeeConfig(env);
   const privyConfig = resolvePrivyConfig(env);
-  const botAuthConfigured = Boolean(env.RIBBOT_TRADING_BOT_TOKEN?.trim());
+  const botAuthConfigured = Boolean(resolveTradingBotToken(env));
   const liveExecutionEnabled = isTradingBotLiveExecutionEnabled(env);
   const schedulerEnabled = isTradingBotSchedulerEnabled(env);
   const schedulerLiveExecutionEnabled =
@@ -11201,7 +11201,7 @@ function tradingBotScheduledExecutionMissingRequirements(env: Env): string[] {
   if (!boolFlag(env.TRADING_BOT_SCHEDULER_LIVE_EXECUTION_ENABLED)) {
     required.push("TRADING_BOT_SCHEDULER_LIVE_EXECUTION_ENABLED");
   }
-  if (!env.RIBBOT_TRADING_BOT_TOKEN?.trim()) {
+  if (!resolveTradingBotToken(env)) {
     required.push("RIBBOT_TRADING_BOT_TOKEN");
   }
   return Array.from(new Set(required));
@@ -13642,7 +13642,7 @@ async function executeTradingBotScheduledOrder(
   executionId: string,
   env: Env,
 ): Promise<TradingBotScheduledOrderExecutionResult> {
-  const token = env.RIBBOT_TRADING_BOT_TOKEN?.trim();
+  const token = resolveTradingBotToken(env);
   if (!token) {
     return {
       ok: false,
@@ -13705,7 +13705,7 @@ async function executeTradingBotCopyTradeConfig(
   executionId: string,
   env: Env,
 ): Promise<TradingBotAdvancedAutomationExecutionResult> {
-  const token = env.RIBBOT_TRADING_BOT_TOKEN?.trim();
+  const token = resolveTradingBotToken(env);
   if (!token)
     return { ok: false, error: "RIBBOT_TRADING_BOT_TOKEN is not configured" };
   if (config.kind !== "copytrade") {
@@ -13956,7 +13956,7 @@ async function executeTradingBotBundleBuyConfig(
   env: Env,
   store: DurableObjectStub,
 ): Promise<TradingBotBundleBuyExecutionResult> {
-  const token = env.RIBBOT_TRADING_BOT_TOKEN?.trim();
+  const token = resolveTradingBotToken(env);
   if (!token) {
     return bundleBuyExecutionFailure(
       "RIBBOT_TRADING_BOT_TOKEN is not configured",
@@ -14159,7 +14159,7 @@ async function executeTradingBotSniperConfig(
   executionId: string,
   env: Env,
 ): Promise<TradingBotAdvancedAutomationExecutionResult> {
-  const token = env.RIBBOT_TRADING_BOT_TOKEN?.trim();
+  const token = resolveTradingBotToken(env);
   if (!token)
     return { ok: false, error: "RIBBOT_TRADING_BOT_TOKEN is not configured" };
   if (config.kind !== "sniper") {
@@ -14311,7 +14311,7 @@ async function executeTradingBotAutoBuyConfig(
   executionId: string,
   env: Env,
 ): Promise<TradingBotAdvancedAutomationExecutionResult> {
-  const token = env.RIBBOT_TRADING_BOT_TOKEN?.trim();
+  const token = resolveTradingBotToken(env);
   if (!token)
     return { ok: false, error: "RIBBOT_TRADING_BOT_TOKEN is not configured" };
   if (config.kind !== "auto_buy") {
@@ -14458,7 +14458,7 @@ async function executeTradingBotAutoSellConfig(
   executionId: string,
   env: Env,
 ): Promise<TradingBotAdvancedAutomationExecutionResult> {
-  const token = env.RIBBOT_TRADING_BOT_TOKEN?.trim();
+  const token = resolveTradingBotToken(env);
   if (!token)
     return { ok: false, error: "RIBBOT_TRADING_BOT_TOKEN is not configured" };
   if (config.kind !== "auto_sell") {
@@ -18253,11 +18253,22 @@ function resolvePrivyConfig(env: Env): PrivyConfig | null {
     apiBaseUrl:
       env.PRIVY_API_BASE_URL?.trim().replace(/\/+$/, "") ||
       DEFAULT_PRIVY_API_BASE_URL,
-    authorizationKeyId: env.PRIVY_AUTHORIZATION_KEY_ID?.trim() || undefined,
+    authorizationKeyId:
+      env.PRIVY_AUTHORIZATION_KEY_ID?.trim() ||
+      env.PRIVY_SIGNER_ID?.trim() ||
+      undefined,
     authorizationPrivateKey:
       env.PRIVY_AUTHORIZATION_PRIVATE_KEY?.trim() || undefined,
     walletPolicyIds: parseCsv(env.PRIVY_WALLET_POLICY_IDS),
   };
+}
+
+function resolveTradingBotToken(env: Env): string | undefined {
+  return (
+    env.RIBBOT_TRADING_BOT_TOKEN?.trim() ||
+    env.FROGX_BOT_API_TOKEN?.trim() ||
+    undefined
+  );
 }
 
 async function rpcRequest<T>(
@@ -18297,7 +18308,7 @@ function authorizeTradingBotRequest(
   request: Request,
   env: Env,
 ): "allowed" | "denied" | "missing" {
-  const token = env.RIBBOT_TRADING_BOT_TOKEN?.trim();
+  const token = resolveTradingBotToken(env);
   if (!token) return "missing";
 
   const authorization = request.headers.get("Authorization") ?? "";

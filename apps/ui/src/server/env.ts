@@ -1,7 +1,7 @@
 export const getTapestryConfig = () => {
   const TAPESTRY_API_KEY = process.env.TAPESTRY_API_KEY;
   const TAPESTRY_API_BASE_URL =
-    process.env.TAPESTRY_API_BASE_URL ?? "https://api.usetapestry.dev/api/v1";
+    process.env.TAPESTRY_API_BASE_URL ?? "https://api.usetapestry.dev/v1";
   const TAPESTRY_NAMESPACE = process.env.TAPESTRY_NAMESPACE ?? null;
 
   if (!TAPESTRY_API_KEY) {

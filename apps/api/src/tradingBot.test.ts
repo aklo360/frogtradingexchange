@@ -568,6 +568,28 @@ describe("trading bot config", () => {
     expect(data.botAuth).toEqual({ required: true, configured: true });
   });
 
+  it("accepts the deployed legacy bot-token and Privy signer aliases", async () => {
+    const response = await getTradingBotConfig({
+      PRIVY_APP_ID: "privy-app",
+      PRIVY_APP_SECRET: "privy-secret",
+      PRIVY_SIGNER_ID: "legacy-signer-id",
+      PRIVY_AUTHORIZATION_PRIVATE_KEY: "legacy-private-key",
+      FROGX_BOT_API_TOKEN: "legacy-bot-token",
+      TRADING_BOT_LIVE_EXECUTION_ENABLED: "true",
+      TRADING_BOT_ACCOUNTS: fakeTradingBotAccounts(() =>
+        Response.json({ status: "ready" }),
+      ),
+    } as Env);
+    const data = (await response.json()) as {
+      capabilities: { privyWallets: boolean; liveSigning: boolean };
+      botAuth: { required: boolean; configured: boolean };
+    };
+
+    expect(data.capabilities.privyWallets).toBe(true);
+    expect(data.capabilities.liveSigning).toBe(true);
+    expect(data.botAuth).toEqual({ required: true, configured: true });
+  });
+
   it("advertises server-side account storage when the Durable Object is bound", async () => {
     const response = await getTradingBotConfig({
       TRADING_BOT_ACCOUNTS: fakeTradingBotAccounts(() =>
