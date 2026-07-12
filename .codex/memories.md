@@ -1,19 +1,17 @@
-# Memories [~90% - keep under 2200 chars]
+# Memories [keep under 2200 chars]
 
-FTX (Frog Trading Exchange) is managed at `/Users/aklo/projects/ftx`. Git remote is `https://github.com/aklo360/frogtradingexchange.git`; default push identity is `aklo360`.
+FTX/FrogX is a Next 15 UI and Worker. Ribbot is Telegram UX/cache; wallet, risk, lifecycle, and execution authority remain in FTX.
 
-Stack: pnpm monorepo with Next.js 15 UI in `apps/ui` and Cloudflare Worker API in `apps/api`. Confirm before deploying or changing Cloudflare/Titan/Solana secrets.
+Accounts persist up to 10 embedded Privy Solana wallet slots plus an active ID; linked external wallets are excluded. Legacy fields project the active slot. Telegram selection is complete; additional wallet creation/import, disperse, bridge, and true multi-wallet Bundle Buy are not.
 
-Perps work in progress: `/perps` is a read-only Imperial terminal prototype linked from the hamburger menu. It uses public Imperial endpoints (`/funding-rates`, `/mark-prices`, `/route`, `/status`, `/stats/summary`) and TradingView Lightweight Charts for 15-minute Coinbase candles on supported markets, with GMGN links for mapped Solana assets. GMGN iframe embeds are blocked locally by Cloudflare; Binance returns HTTP 451 from this location. Do not enable live perps order placement until Imperial JWT auth, USDC profile funding, order-bot health gating, and `success:false` response handling are implemented and verified.
+FTX owns mode, confirmation, 2-4 buy/sell presets, separate fees, sell protection, automation opt-ins, and a separate default-off Instant Auto Buy profile. Simple mode forces confirmation off; protected sells above 75% still confirm. Pasted-CA instant buys require a managed Privy wallet, FTX risk precheck, exact stored amount/buy fee/slippage, SOL-to-token direction, and a second FTX risk check inside tagged `/execute` before Privy.
 
-Background music defaults to muted. Perps, home, profile, and leaderboard expose mute/unmute controls via the shared AudioProvider state.
+FTX owns copytrade sizing/caps, controls, filters, pause, edit, and duplicate. Target changes and copies establish a fresh baseline.
 
-DAEMON airdrop claim/reservation flow is enabled in production: `/airdrop` UI plus Worker `/api/frogx/airdrop/*` and `AirdropCoordinator`. It requires at least 1 Business Frog and a Solana signature binding the entered ETH payout address; Phantom/EVM signature is optional. Claim submission immediately reserves FCFS tiers: 1-9 frogs get `0.10` `$DAEMON`, 10+ frogs get `1.00` `$DAEMON`, until the 10 `$DAEMON` pool is exhausted. UI must distinguish reserved claims from paid ERC20 transfers: no claim is “airdropped” unless `payoutTxHash` exists.
+UI `/ribbot` uses short sessions and includes Instant Auto Buy controls. Privy login requires exact identity/wallet match, creates no wallet, keeps export in Privy's modal, and controls app signers before syncing FTX pause. Live verification remains.
 
-Payout config: token `0x43298327b0249caF5A4942C6951F5Ac6AD7297A0`, active production config points at original escrow `0xC853Fc4dE86fC8868Fa89FC3B207d4592Db19e46`, 18 decimals. On 2026-05-28 the clipboard seed matched this original escrow at `m/44'/60'/0'/0/0`; `AIRDROP_ESCROW_PRIVATE_KEY` was replaced with that signer. `0.009 ETH` was moved from new escrow `0x2c475...0B71` to the original escrow in tx `0xbf2264...f87ad`; payout/autopayout flags were enabled in Worker version `62dd0d2c-86fe-4346-888c-753f86d5f9ad`. Claim #1 paid `0.10 $DAEMON` in tx `0x1e1c76...b04d2`; old escrow now has `9.9 $DAEMON` and about `0.008985 ETH`.
+Live execution defaults off and requires base/per-feature gates, opt-in, matching managed wallet, signer config, no revocation, and RPC/risk checks. Privy POSTs use deterministic references/idempotency keys. Ambiguous sends stay locked; wallet/chain-validated GET-only reconciliation rejects stale writes and never resends.
 
-Temporary gas wallet `7p8n64DoGj1kQ2ChT7mXvbztVgjQEgESgrrqExryoNay`; key stored in `~/.secrets.env:FROGX_DAEMON_GAS_SOL_DEPOSIT_SECRET_20260528180237`. Bridged `0.12 SOL` to old escrow ETH via deBridge order `0xe0b7...d57a`; Solana tx `4Tsd...6yQFQ`, Ethereum tx `0x4813...ad19`. On 2026-05-28, moved another `0.0073 SOL` into this wallet, but deBridge still rejected the usable amount as below minimum after rent/fee headroom. Old escrow ETH is now only dust; new escrow `0x2c475831b645620A2bE61f1435c2863242470B71` has no ETH or DAEMON yet.
+Unresolved sends share a 900-second review threshold; closure requires terminal evidence. Cron atomically claims executions. Baskets never auto-resume. Sniper applies launch source/cooldown/cap/authority/liquidity/market-cap/balance/risk checks. All gates default false.
 
-Local eligibility needs a Helius/DAS-capable `SOLANA_RPC_URL`. `scripts/dev-worker.mjs` writes forwarded env into ignored `apps/api/.dev.vars` instead of CLI `--var` args so secrets do not appear in `ps`.
-
-For future points, the Durable Object records append-only wallet events (`eligibility_checked`, `eligibility_unavailable`, `challenge_created`, `claim_queued`, `payout_sent`, `payout_failed`) in admin export. Treat signed challenge/claim events as stronger evidence than unsigned eligibility checks.
+Referral payouts do not exist. PNL indexes confirmed Solana balance fills with event fallback; USD remains net-SOL/current-price estimated, with no realized/FIFO accounting. Code-level Instant Auto Buy is verified locally; no deploy, Telegram send, live Privy/Solana call, or secret change occurred.

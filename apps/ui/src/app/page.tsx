@@ -136,6 +136,21 @@ export default function Home() {
               className={styles.menuItem}
               onClick={() => {
                 closeMenu();
+                router.push("/ribbot");
+              }}
+            >
+              <img
+                src="/chat.svg"
+                alt=""
+                className={styles.menuIcon}
+              />
+              <span>RIBBOT</span>
+            </button>
+            <button
+              type="button"
+              className={styles.menuItem}
+              onClick={() => {
+                closeMenu();
                 router.push("/airdrop");
               }}
             >

@@ -23,7 +23,7 @@ export function middleware() {
   if (process.env.NODE_ENV === "production") {
     response.headers.set(
       "Strict-Transport-Security",
-      "max-age=31536000; includeSubDomains"
+      "max-age=31536000; includeSubDomains",
     );
   }
 
@@ -32,19 +32,19 @@ export function middleware() {
   const csp = [
     "default-src 'self'",
     // Allow scripts from self, inline (needed for Next.js), and eval for WASM
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://telegram.org",
     // Allow styles from self and inline (needed for CSS-in-JS)
-    "style-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     // Allow images from self, data URIs, and HTTPS sources (NFT metadata)
     "img-src 'self' data: https: blob:",
     // Allow fonts from self
-    "font-src 'self' data:",
+    "font-src 'self' data: https://fonts.gstatic.com",
     // Allow connections to necessary APIs
     "connect-src 'self' https: wss:",
     // Allow media from self and HTTPS
     "media-src 'self' https: blob:",
     // Allow the embedded GMGN kline chart on the perps terminal
-    "frame-src 'self' https://www.gmgn.cc",
+    "frame-src 'self' https://www.gmgn.cc https://auth.privy.io https://api.privy.io https://oauth.telegram.org",
     // Prevent embedding in frames
     "frame-ancestors 'none'",
     // Block object/embed/applet
@@ -60,7 +60,7 @@ export function middleware() {
   // Permissions Policy - restrict browser features
   response.headers.set(
     "Permissions-Policy",
-    "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+    "camera=(), microphone=(), geolocation=(), interest-cohort=()",
   );
 
   return response;

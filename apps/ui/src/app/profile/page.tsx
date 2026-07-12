@@ -1,47 +1,69 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element -- NFT metadata image hosts are dynamic. */
+
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { WalletButton } from "@/components/WalletButton";
-import { Ticker } from "@/components/Ticker";
-import { useAudio } from "@/providers/AudioProvider";
 import { useWallet } from "@solana/wallet-adapter-react";
+
+import { Ticker } from "@/components/Ticker";
+import { WalletButton } from "@/components/WalletButton";
 import { isV1 } from "@/lib/version";
-import type { AppProfileResponse } from "@/lib/tapestry/types";
 import {
   DEFAULT_INCLUDE_COMPRESSED,
   DEFAULT_NFT_COLLECTION,
 } from "@/lib/tapestry/constants";
+import type { AppProfileResponse } from "@/lib/tapestry/types";
+import { useAudio } from "@/providers/AudioProvider";
 import homeStyles from "../page.module.css";
 import styles from "./profile.module.css";
+import {
+  PROFILE_NFT_PAGE_SIZE,
+  buildProfileMilestones,
+  buildProfileTimeline,
+  deriveDefaultUsername,
+  formatShortAddress,
+  normalizeEpochMilliseconds,
+} from "./profileView";
 
 type FetchState = "idle" | "loading" | "error";
 
-const NFT_PAGE_SIZE = 8;
+const profileCache = new Map<string, AppProfileResponse>();
 
-const deriveDefaultUsername = (address: string) =>
-  `frog-${address.slice(0, 4)}${address.slice(-2)}`.toLowerCase();
+const initialsFor = (value: string) =>
+  value.trim().slice(0, 2).toUpperCase() || "??";
 
-/**
- * SECURITY: Sanitize URL for use in CSS background-image
- * Prevents CSS injection attacks by validating URL format
- */
-const sanitizeCssUrl = (url: string | null | undefined): string | null => {
-  if (!url) return null;
-  try {
-    const parsed = new URL(url);
-    // Only allow http/https protocols
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return null;
-    }
-    // Encode any special CSS characters
-    return parsed.href.replace(/[()'"\\]/g, encodeURIComponent);
-  } catch {
-    return null;
-  }
+const formatProfileDate = (value?: number) => {
+  if (!value) return "Unknown";
+  const timestamp = normalizeEpochMilliseconds(value);
+  if (!Number.isFinite(timestamp)) return "Unknown";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    year: "numeric",
+  }).format(new Date(timestamp));
 };
 
-const profileCache = new Map<string, AppProfileResponse>();
+const formatActivityDate = (value: number) =>
+  new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+  }).format(new Date(value));
+
+const extractNftNumber = (name: string, collection?: string | null) => {
+  const fromName = name.match(/(\d+)/g);
+  if (fromName?.length) return fromName[fromName.length - 1];
+  const fromCollection = collection?.match(/(\d+)/g);
+  return fromCollection?.length
+    ? fromCollection[fromCollection.length - 1]
+    : null;
+};
+
+const cleanNftName = (raw: string, number: string | null) => {
+  let cleaned = raw.replace(/solana business frogs?/gi, "");
+  if (number) cleaned = cleaned.replace(new RegExp(`#?${number}`, "gi"), "");
+  cleaned = cleaned.replace(/#?\d+/g, "").replace(/\s+/g, " ").trim();
+  return cleaned || "Frog";
+};
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -61,32 +83,30 @@ export default function ProfilePage() {
   const [nftPage, setNftPage] = useState(1);
   const [selectingPfp, setSelectingPfp] = useState(false);
   const [pfpSaving, setPfpSaving] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
   const [pfpError, setPfpError] = useState<string | null>(null);
+  const [requestVersion, setRequestVersion] = useState(0);
 
-  const toggleMenu = () => setMenuOpen((open) => !open);
   const closeMenu = () => setMenuOpen(false);
-  const handleToggleMute = () => {
-    toggleMuted();
-  };
 
   useEffect(() => {
-    if (!menuOpen) return undefined;
+    if (!menuOpen && !selectingPfp) return undefined;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        closeMenu();
-      }
+      if (event.key !== "Escape") return;
+      closeMenu();
+      setSelectingPfp(false);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [menuOpen]);
+  }, [menuOpen, selectingPfp]);
 
   useEffect(() => {
-    if (!isV1) return;
-    router.replace("/");
-  }, [router, isV1]);
+    if (isV1) router.replace("/");
+  }, [router]);
 
   useEffect(() => {
     setNftPage(1);
+    setSelectingPfp(false);
   }, [walletAddress]);
 
   useEffect(() => {
@@ -97,11 +117,8 @@ export default function ProfilePage() {
       return;
     }
 
-    // Serve from cache immediately
     const cached = profileCache.get(walletAddress);
-    if (cached) {
-      setProfileData(cached);
-    }
+    if (cached) setProfileData(cached);
 
     const controller = new AbortController();
     let canceled = false;
@@ -116,28 +133,23 @@ export default function ProfilePage() {
           nftPage: "1",
           nftLimit: "1000",
         });
-
         if (DEFAULT_NFT_COLLECTION) {
           query.set("nftCollection", DEFAULT_NFT_COLLECTION);
         }
-        if (DEFAULT_INCLUDE_COMPRESSED) {
-          query.set("nftMode", "all");
-        }
+        if (DEFAULT_INCLUDE_COMPRESSED) query.set("nftMode", "all");
+
         const response = await fetch(
           `/api/tapestry/profiles?${query.toString()}`,
-          {
-            cache: "no-store",
-            signal: controller.signal,
-          },
+          { cache: "no-store", signal: controller.signal },
         );
 
         if (response.status === 404) {
           if (canceled) return;
+          profileCache.delete(walletAddress);
           setProfileData(null);
           setFetchState("idle");
           return;
         }
-
         if (!response.ok) {
           const errorText = await response.text();
           throw new Error(errorText || "Failed to load profile");
@@ -145,81 +157,60 @@ export default function ProfilePage() {
 
         const data = (await response.json()) as AppProfileResponse;
         if (canceled) return;
-
         profileCache.set(walletAddress, data);
         setProfileData(data);
         setFetchState("idle");
       } catch (error) {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || canceled) return;
         console.error("Error loading Tapestry profile", error);
-        if (!canceled) {
-          setFetchState("error");
-          setErrorMessage("Unable to load your profile right now.");
-        }
+        setFetchState("error");
+        setErrorMessage("Your profile could not be synced right now.");
       }
     };
 
-    loadProfile();
-
+    void loadProfile();
     return () => {
       canceled = true;
       controller.abort();
     };
-  }, [walletAddress]);
+  }, [requestVersion, walletAddress]);
 
-  const followerTotal =
-    profileData?.followers?.total ?? profileData?.socialCounts.followers ?? 0;
-  const followingTotal =
-    profileData?.following?.total ?? profileData?.socialCounts.following ?? 0;
-  const profileRecord = profileData?.profile;
-  const pfpMint = profileData?.pfpMint ?? null;
-  const pfpImage = profileData?.pfpImage ?? null;
-  const displayUsername =
-    profileRecord?.username ??
-    (walletAddress ? deriveDefaultUsername(walletAddress) : "Your frog handle");
-  const displayBio =
-    profileRecord?.bio ??
-    "Add a bio to share your frog lore and trading style.";
-  const avatarUrl = pfpImage ?? profileRecord?.image ?? null;
-  const allNfts = profileData?.nfts?.items ?? [];
-  const totalFrogs = Math.min(profileData?.nfts?.total ?? allNfts.length, 999);
-  const nftCurrentPage = nftPage;
-  const nftTotalPages = Math.max(1, Math.ceil(Math.max(totalFrogs, 1) / NFT_PAGE_SIZE));
-  const hasPrevNfts = nftCurrentPage > 1;
-  const hasNextNfts = nftCurrentPage < nftTotalPages;
-  const currentStart = (nftCurrentPage - 1) * NFT_PAGE_SIZE + 1;
-  const currentEnd = Math.min(nftCurrentPage * NFT_PAGE_SIZE, totalFrogs || allNfts.length);
-  const pagedNfts = allNfts.slice(
-    (nftCurrentPage - 1) * NFT_PAGE_SIZE,
-    nftCurrentPage * NFT_PAGE_SIZE,
-  );
+  const refreshProfile = () => setRequestVersion((version) => version + 1);
 
-  const handlePrevNfts = () => {
-    if (hasPrevNfts) {
-      setNftPage((prev) => Math.max(1, prev - 1));
-    }
-  };
-
-  const handleNextNfts = () => {
-    if (hasNextNfts) {
-      setNftPage((prev) => prev + 1);
-    }
-  };
-
-  const handleFirstNfts = () => {
-    if (nftCurrentPage !== 1) {
-      setNftPage(1);
-    }
-  };
-
-  const handleLastNfts = () => {
-    if (nftCurrentPage !== nftTotalPages) {
-      setNftPage(nftTotalPages);
+  const handleCreateProfile = async () => {
+    if (!walletAddress) return;
+    setProfileSaving(true);
+    setErrorMessage(null);
+    try {
+      const response = await fetch("/api/tapestry/profiles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: deriveDefaultUsername(walletAddress),
+          walletAddress,
+          bio: null,
+        }),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || "Profile creation failed");
+      }
+      const data = (await response.json()) as AppProfileResponse;
+      profileCache.set(walletAddress, data);
+      setProfileData(data);
+      setFetchState("idle");
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Profile creation failed.",
+      );
+    } finally {
+      setProfileSaving(false);
     }
   };
 
   const handleSelectPfp = async (mint: string, image: string | null) => {
-    if (!walletAddress || !profileRecord) return;
+    const profile = profileData?.profile;
+    if (!walletAddress || !profile) return;
     setPfpSaving(true);
     setPfpError(null);
     try {
@@ -227,10 +218,10 @@ export default function ProfilePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          username: profileRecord.username,
+          username: profile.username,
           walletAddress,
-          profileId: profileRecord.id,
-          bio: profileRecord.bio ?? null,
+          profileId: profile.id,
+          bio: profile.bio ?? null,
           pfpMint: mint,
           pfpImage: image,
         }),
@@ -240,74 +231,60 @@ export default function ProfilePage() {
         throw new Error(text || `Failed with status ${response.status}`);
       }
       const data = (await response.json()) as AppProfileResponse;
+      profileCache.set(walletAddress, data);
       setProfileData(data);
       setSelectingPfp(false);
     } catch (error) {
-      setPfpError((error as Error).message ?? "Failed to set PFP");
+      setPfpError(error instanceof Error ? error.message : "Failed to set PFP");
     } finally {
       setPfpSaving(false);
     }
   };
 
-  const initialsFor = (value: string) =>
-    value.trim().slice(0, 2).toUpperCase() || "??";
+  const followerTotal =
+    profileData?.followers?.total ?? profileData?.socialCounts.followers ?? 0;
+  const followingTotal =
+    profileData?.following?.total ?? profileData?.socialCounts.following ?? 0;
+  const profileRecord = profileData?.profile;
+  const allNfts = profileData?.nfts?.items ?? [];
+  const totalFrogs = Math.max(profileData?.nfts?.total ?? 0, allNfts.length);
+  const recentTradeCount = profileData?.tradeHistory?.length ?? 0;
+  const pfpMint = profileData?.pfpMint ?? null;
+  const avatarUrl =
+    profileData?.pfpImage ?? profileRecord?.image ?? "/sbficon.png";
+  const displayUsername =
+    profileRecord?.username ??
+    (walletAddress ? deriveDefaultUsername(walletAddress) : "Frog profile");
+  const displayBio = profileRecord?.bio?.trim() || "No bio added yet.";
+  const timeline = profileData ? buildProfileTimeline(profileData) : [];
+  const milestones = buildProfileMilestones({
+    frogCount: totalFrogs,
+    followerCount: followerTotal,
+    recentTradeCount,
+  });
 
-  const formatAddress = (address: string) =>
-    `${address.slice(0, 4)}…${address.slice(-4)}`;
+  const nftTotalPages = Math.max(
+    1,
+    Math.ceil(Math.max(totalFrogs, 1) / PROFILE_NFT_PAGE_SIZE),
+  );
+  const hasPrevNfts = nftPage > 1;
+  const hasNextNfts = nftPage < nftTotalPages;
+  const currentStart = totalFrogs
+    ? (nftPage - 1) * PROFILE_NFT_PAGE_SIZE + 1
+    : 0;
+  const currentEnd = Math.min(
+    nftPage * PROFILE_NFT_PAGE_SIZE,
+    totalFrogs || allNfts.length,
+  );
+  const pagedNfts = allNfts.slice(
+    (nftPage - 1) * PROFILE_NFT_PAGE_SIZE,
+    nftPage * PROFILE_NFT_PAGE_SIZE,
+  );
 
-  const points =
-    Math.max(
-      0,
-      Math.round(
-        (profileData?.tokenSummary ?? []).reduce((sum, token) => {
-          const usd = Number(token.netUsd ?? 0);
-          return Number.isFinite(usd) ? sum + usd : sum;
-        }, 0) * 100,
-      ),
-    ) || followerTotal * 10;
-  const leaderboardRank =
-    points > 0 ? Math.max(1, 999 - Math.min(points, 900)) : null;
-
-  const badgeDeck = [
-    { icon: "/badge-hotshot.svg", label: "Hotshot" },
-    { icon: "/badge-samurai.svg", label: "Samurai" },
-    { icon: "/badge-trailblazer.svg", label: "Trailblazer" },
-  ];
-
-  const extractNftNumber = (name: string, collection?: string | null) => {
-    const fromName = name.match(/(\d+)/g);
-    if (fromName && fromName.length) {
-      return fromName[fromName.length - 1];
-    }
-    if (collection) {
-      const fromCollection = collection.match(/(\d+)/g);
-      if (fromCollection && fromCollection.length) {
-        return fromCollection[fromCollection.length - 1];
-      }
-    }
-    return null;
-  };
-
-  const cleanNftName = (raw: string, number: string | null) => {
-    let cleaned = raw.replace(/solana business frogs?/gi, "");
-    if (number) {
-      const numberPattern = new RegExp(`#?${number}`, "gi");
-      cleaned = cleaned.replace(numberPattern, "");
-    }
-    cleaned = cleaned.replace(/#?\d+/g, "");
-    cleaned = cleaned.replace(/\s+/g, " ").trim();
-    if (cleaned.length === 0) {
-      return "Frog";
-    }
-    return cleaned;
-  };
-
-  if (isV1) {
-    return null;
-  }
+  if (isV1) return null;
 
   return (
-    <main className={homeStyles.main}>
+    <main className={`${homeStyles.main} ${styles.page}`}>
       <header className={homeStyles.headerBar}>
         <div className={homeStyles.headerInner}>
           <button
@@ -335,7 +312,6 @@ export default function ProfilePage() {
                   src="/logo.png"
                   alt="Frog Trading Exchange"
                   className={homeStyles.brandLogo}
-                  loading="lazy"
                 />
               </h1>
               <video
@@ -354,18 +330,12 @@ export default function ProfilePage() {
           </button>
         </div>
         <div className={homeStyles.rightControls}>
-          {connected && !isV1 ? (
-            <div className={homeStyles.xpChip} aria-label="Your XP">
-              <span className={homeStyles.xpValue}>4,269 XP</span>
-              <img src="/sparkle.svg" alt="" className={homeStyles.sparkleIcon} />
-            </div>
-          ) : null}
           <button
             type="button"
             className={homeStyles.menuButton}
             aria-label="Open navigation"
             aria-expanded={menuOpen}
-            onClick={toggleMenu}
+            onClick={() => setMenuOpen((open) => !open)}
           >
             <span className={homeStyles.menuButtonBars} aria-hidden="true" />
           </button>
@@ -378,56 +348,31 @@ export default function ProfilePage() {
             <div className={homeStyles.menuWalletWrapper} onClick={closeMenu}>
               <WalletButton className={homeStyles.menuWallet} />
             </div>
-            <button
-              type="button"
-              className={homeStyles.menuItem}
-              onClick={() => {
-                closeMenu();
-                router.push("/perps");
-              }}
-            >
-              <img
-                src="/sparkle.svg"
-                alt=""
-                className={`${homeStyles.menuIcon} ${homeStyles.pixelIcon}`}
-              />
-              <span>PERPS</span>
-            </button>
-            {connected && !isV1 ? (
+            {[
+              ["/perps", "/sparkle.svg", "PERPS"],
+              ["/ribbot", "/chat.svg", "RIBBOT"],
+              ["/airdrop", "/sparkle.svg", "AIRDROP"],
+              ["/profile", "/bank.svg", "PROFILE"],
+              ["/leaderboard", "/trophy.svg", "LEADERBOARD"],
+            ].map(([href, icon, label]) => (
               <button
+                key={href}
                 type="button"
                 className={homeStyles.menuItem}
                 onClick={() => {
                   closeMenu();
-                  router.push("/profile");
+                  router.push(href);
                 }}
               >
-                <img src="/bank.svg" alt="" className={homeStyles.menuIcon} />
-                <span>PROFILE</span>
+                <img src={icon} alt="" className={homeStyles.menuIcon} />
+                <span>{label}</span>
               </button>
-            ) : null}
-            {!isV1 ? (
-              <button
-                type="button"
-                className={homeStyles.menuItem}
-                onClick={() => {
-                  closeMenu();
-                  router.push("/leaderboard");
-                }}
-              >
-                <img
-                  src="/trophy.svg"
-                  alt=""
-                  className={`${homeStyles.menuIcon} ${homeStyles.pixelIcon} ${homeStyles.trophyIcon}`}
-                />
-                <span>LEADERBOARD</span>
-              </button>
-            ) : null}
+            ))}
             <button
               type="button"
               className={homeStyles.menuItem}
               onClick={() => {
-                handleToggleMute();
+                toggleMuted();
                 closeMenu();
               }}
             >
@@ -438,18 +383,6 @@ export default function ProfilePage() {
               />
               <span>{muted ? "Unmute" : "Mute"}</span>
             </button>
-            {!isV1 ? (
-              <>
-                <button type="button" className={homeStyles.menuItem} onClick={closeMenu}>
-                  <img src="/info.svg" alt="" className={homeStyles.menuIcon} />
-                  <span>Help</span>
-                </button>
-                <button type="button" className={homeStyles.menuItem} onClick={closeMenu}>
-                  <img src="/chat.svg" alt="" className={homeStyles.menuIcon} />
-                  <span>Chat</span>
-                </button>
-              </>
-            ) : null}
           </nav>
         </div>
         {menuOpen ? (
@@ -463,213 +396,362 @@ export default function ProfilePage() {
       </header>
       <Ticker />
 
-      <section className={styles.content}>
-        <div className={styles.heroCard}>
-          <button
-            type="button"
-            className={styles.avatarWrap}
-            onClick={() => connected && setSelectingPfp(true)}
-            aria-label="Choose profile picture"
-          >
-            {sanitizeCssUrl(avatarUrl) ? (
-              <div
-                className={styles.avatarImage}
-                style={{ backgroundImage: `url(${sanitizeCssUrl(avatarUrl)})` }}
-              />
-            ) : (
-              <div className={styles.avatarFallback}>{initialsFor(displayUsername)}</div>
-            )}
-          </button>
-          <div className={styles.heroMeta}>
-            <p className={styles.eyebrow}>FROG SOCIAL PROFILE</p>
-            <h1 className={styles.title}>{displayUsername}</h1>
-            <p className={styles.bio}>{displayBio}</p>
-            <div className={styles.statRow}>
-              <div className={styles.stat}>
-                <span className={styles.statLabel}>Followers</span>
-                <span className={styles.statValue}>{followerTotal.toLocaleString()}</span>
-              </div>
-              <div className={styles.stat}>
-                <span className={styles.statLabel}>Following</span>
-                <span className={styles.statValue}>{followingTotal.toLocaleString()}</span>
-              </div>
-              <div className={styles.stat}>
-                <span className={styles.statLabel}>Frogs held</span>
-                <span className={styles.statValue}>{totalFrogs.toLocaleString()}</span>
-              </div>
-              <div className={styles.stat}>
-                <span className={styles.statLabel}>Points</span>
-                <span className={styles.statValue}>{points.toLocaleString()}</span>
-              </div>
-              <div className={styles.stat}>
-                <span className={styles.statLabel}>Leaderboard</span>
-                <span className={styles.statValue}>
-                  {leaderboardRank ? `#${leaderboardRank}` : "—"}
-                </span>
-              </div>
+      <section className={styles.shell} aria-label="Frog profile">
+        {!connected || !walletAddress ? (
+          <section className={styles.connectState}>
+            <div className={styles.connectArtwork} aria-hidden="true">
+              <img src="/sbficon.png" alt="" />
             </div>
-            {walletAddress ? (
-              <p className={styles.walletTag}>Wallet: {formatAddress(walletAddress)}</p>
-            ) : null}
-          </div>
-        </div>
-
-        <div className={styles.badgePanel}>
-          <div className={styles.panelHeader}>
-            <h2>Badges</h2>
-            <span className={styles.panelHint}>Earned across your adventures</span>
-          </div>
-          <div className={styles.badgeCarousel} role="list">
-            {badgeDeck.map((badge) => (
-              <div key={badge.label} className={styles.badge} role="listitem">
-                <img src={badge.icon} alt="" className={styles.badgeIcon} />
-                <span>{badge.label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className={styles.panel}>
-          <div className={styles.panelHeader}>
-            <h2>Solana Business Frogs</h2>
-            {nftTotalPages > 1 ? (
-              <div className={styles.pagination}>
-                <button
-                  type="button"
-                  onClick={handleFirstNfts}
-                  disabled={!hasPrevNfts || fetchState === "loading"}
-                >
-                  First
-                </button>
-                <button
-                  type="button"
-                  onClick={handlePrevNfts}
-                  disabled={!hasPrevNfts || fetchState === "loading"}
-                >
-                  Prev
-                </button>
-                <span className={styles.paginationLabel}>
-                  Page {nftCurrentPage} / {nftTotalPages} · {currentStart}–{currentEnd} of{" "}
-                  {totalFrogs}
-                </span>
-                <button
-                  type="button"
-                  onClick={handleNextNfts}
-                  disabled={!hasNextNfts || fetchState === "loading"}
-                >
-                  Next
-                </button>
-                <button
-                  type="button"
-                  onClick={handleLastNfts}
-                  disabled={!hasNextNfts || fetchState === "loading"}
-                >
-                  Last
-                </button>
-              </div>
-            ) : null}
-          </div>
-          {pagedNfts.length ? (
-            <div className={styles.nftGrid}>
-              {pagedNfts.map((nft) => {
-                const num = extractNftNumber(nft.name, nft.collection);
-                const displayName = cleanNftName(nft.name, num);
-                const label = num ? `${displayName} #${num}` : displayName;
-                return (
-                  <div key={nft.id} className={styles.nftCard}>
-                    <div className={styles.nftImageWrap}>
-                      {nft.image ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={nft.image}
-                          alt={label}
-                          className={styles.nftImage}
-                          loading="lazy"
-                          referrerPolicy="no-referrer"
-                        />
-                      ) : (
-                        <div className={styles.nftPlaceholder}>{initialsFor(label)}</div>
-                      )}
-                    </div>
-                    <div className={styles.nftMeta}>
-                      <p className={styles.nftName}>{label}</p>
-                    </div>
-                  </div>
-                );
-              })}
+            <div className={styles.connectCopy}>
+              <p className={styles.eyebrow}>Frog profile</p>
+              <h1>Your wallet is your identity.</h1>
+              <p>
+                Connect a Solana wallet to load your profile, frogs, milestones,
+                and recent exchange activity.
+              </p>
+              <WalletButton className={styles.primaryButton} />
             </div>
-          ) : (
-            <p className={styles.emptyState}>
-              No NFTs found yet. Mint or collect to show them off here.
-            </p>
-          )}
-        </div>
-
-        {!connected ? (
-          <div className={styles.overlayMessage}>
-            <p>Connect a wallet to personalize your Frog Social profile.</p>
-          </div>
+          </section>
         ) : fetchState === "loading" && !profileData ? (
-          <div className={styles.overlayMessage}>
-            <p>Fetching your Tapestry profile…</p>
-          </div>
-        ) : null}
+          <section className={styles.loadingState} aria-live="polite">
+            <div className={`${styles.skeleton} ${styles.skeletonAvatar}`} />
+            <div className={styles.loadingLines}>
+              <div className={`${styles.skeleton} ${styles.skeletonLabel}`} />
+              <div className={`${styles.skeleton} ${styles.skeletonTitle}`} />
+              <div className={`${styles.skeleton} ${styles.skeletonBody}`} />
+            </div>
+            <span>Syncing wallet profile</span>
+          </section>
+        ) : fetchState === "error" && !profileData ? (
+          <section className={styles.emptyProfileState}>
+            <img src="/sbficon.png" alt="" className={styles.emptyMascot} />
+            <div>
+              <p className={styles.eyebrow}>Sync interrupted</p>
+              <h1>Profile data is unavailable.</h1>
+              <p>{errorMessage}</p>
+              <button
+                type="button"
+                className={styles.primaryButton}
+                onClick={refreshProfile}
+              >
+                Retry sync
+              </button>
+            </div>
+          </section>
+        ) : !profileData ? (
+          <section className={styles.emptyProfileState}>
+            <img src="/sbficon.png" alt="" className={styles.emptyMascot} />
+            <div>
+              <p className={styles.eyebrow}>Wallet connected</p>
+              <h1>Create your Frog profile.</h1>
+              <p>
+                Start with a wallet-derived handle. Your owned frogs can become
+                the profile picture after creation.
+              </p>
+              <button
+                type="button"
+                className={styles.primaryButton}
+                onClick={() => void handleCreateProfile()}
+                disabled={profileSaving}
+              >
+                {profileSaving ? "Creating profile" : "Create profile"}
+              </button>
+            </div>
+          </section>
+        ) : (
+          <>
+            <section className={styles.identityBand}>
+              <button
+                type="button"
+                className={styles.avatarButton}
+                onClick={() => allNfts.length && setSelectingPfp(true)}
+                disabled={!allNfts.length}
+                aria-label="Choose a profile frog"
+                title={allNfts.length ? "Choose a profile frog" : "No frogs available"}
+              >
+                <img
+                  src={avatarUrl}
+                  alt={`${displayUsername} profile`}
+                  referrerPolicy="no-referrer"
+                />
+                {allNfts.length ? <span>Change</span> : null}
+              </button>
 
-        {errorMessage ? <p className={styles.errorBanner}>{errorMessage}</p> : null}
+              <div className={styles.identityCopy}>
+                <div className={styles.identityHeading}>
+                  <div>
+                    <p className={styles.eyebrow}>Frog profile</p>
+                    <h1>{displayUsername}</h1>
+                  </div>
+                  {fetchState === "loading" ? (
+                    <span className={styles.syncStatus}>Syncing</span>
+                  ) : (
+                    <span className={styles.syncStatus}>Synced</span>
+                  )}
+                </div>
+                <p className={styles.bio}>{displayBio}</p>
+                <div className={styles.identityMeta}>
+                  <span title={walletAddress}>{formatShortAddress(walletAddress)}</span>
+                  <span>Joined {formatProfileDate(profileRecord?.createdAt)}</span>
+                </div>
+              </div>
+
+              <div className={styles.identityActions}>
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  onClick={() => setSelectingPfp(true)}
+                  disabled={!allNfts.length}
+                >
+                  <img src="/pencil.svg" alt="" />
+                  Profile frog
+                </button>
+                <button
+                  type="button"
+                  className={styles.primaryButton}
+                  onClick={() => router.push("/")}
+                >
+                  <img src="/swap.svg" alt="" />
+                  Trade
+                </button>
+              </div>
+            </section>
+
+            <dl className={styles.metricsBar}>
+              <div>
+                <dt>Frogs</dt>
+                <dd>{totalFrogs.toLocaleString()}</dd>
+              </div>
+              <div>
+                <dt>Followers</dt>
+                <dd>{followerTotal.toLocaleString()}</dd>
+              </div>
+              <div>
+                <dt>Following</dt>
+                <dd>{followingTotal.toLocaleString()}</dd>
+              </div>
+              <div>
+                <dt>Recent trades</dt>
+                <dd>{recentTradeCount.toLocaleString()}</dd>
+              </div>
+            </dl>
+
+            {errorMessage ? (
+              <div className={styles.inlineError} role="status">
+                <span>{errorMessage}</span>
+                <button type="button" onClick={refreshProfile}>
+                  Retry
+                </button>
+              </div>
+            ) : null}
+
+            <div className={styles.workspace}>
+              <section className={styles.collectionSection}>
+                <div className={styles.sectionHeader}>
+                  <div>
+                    <p className={styles.eyebrow}>Wallet collection</p>
+                    <h2>Solana Business Frogs</h2>
+                  </div>
+                  {nftTotalPages > 1 ? (
+                    <div className={styles.pagination}>
+                      <span>
+                        {currentStart}-{currentEnd} of {totalFrogs}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setNftPage((page) => Math.max(1, page - 1))}
+                        disabled={!hasPrevNfts}
+                        aria-label="Previous frogs"
+                        title="Previous frogs"
+                      >
+                        &lsaquo;
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNftPage((page) => Math.min(nftTotalPages, page + 1))}
+                        disabled={!hasNextNfts}
+                        aria-label="Next frogs"
+                        title="Next frogs"
+                      >
+                        &rsaquo;
+                      </button>
+                    </div>
+                  ) : (
+                    <span className={styles.sectionCount}>{totalFrogs} total</span>
+                  )}
+                </div>
+
+                {pagedNfts.length ? (
+                  <div className={styles.nftGrid}>
+                    {pagedNfts.map((nft) => {
+                      const number = extractNftNumber(nft.name, nft.collection);
+                      const name = cleanNftName(nft.name, number);
+                      const label = number ? `${name} #${number}` : name;
+                      const isCurrent = pfpMint === nft.id;
+                      return (
+                        <article key={nft.id} className={styles.nftCard}>
+                          <div className={styles.nftImageWrap}>
+                            {nft.image ? (
+                              <img
+                                src={nft.image}
+                                alt={label}
+                                loading="lazy"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <span>{initialsFor(label)}</span>
+                            )}
+                            {isCurrent ? (
+                              <span className={styles.currentMarker}>Profile</span>
+                            ) : null}
+                          </div>
+                          <div className={styles.nftMeta}>
+                            <strong>{label}</strong>
+                            <button
+                              type="button"
+                              onClick={() => void handleSelectPfp(nft.id, nft.image)}
+                              disabled={isCurrent || pfpSaving}
+                            >
+                              {isCurrent ? "Current frog" : "Set as profile"}
+                            </button>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className={styles.collectionEmpty}>
+                    <img src="/sbficon.png" alt="" />
+                    <div>
+                      <h3>No frogs in this wallet</h3>
+                      <p>Your collection will appear here after the next profile sync.</p>
+                    </div>
+                    <button
+                      type="button"
+                      className={styles.secondaryButton}
+                      onClick={refreshProfile}
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                )}
+              </section>
+
+              <aside className={styles.sideRail}>
+                <section className={styles.railSection}>
+                  <div className={styles.railHeading}>
+                    <h2>Recent activity</h2>
+                    <button type="button" onClick={refreshProfile} title="Refresh profile">
+                      Refresh
+                    </button>
+                  </div>
+                  {timeline.length ? (
+                    <ol className={styles.timeline}>
+                      {timeline.map((item) => (
+                        <li key={item.id}>
+                          <span className={styles.timelineDot} aria-hidden="true" />
+                          <div>
+                            <strong>{item.label}</strong>
+                            <p>{item.detail}</p>
+                          </div>
+                          <time dateTime={new Date(item.timestamp).toISOString()}>
+                            {formatActivityDate(item.timestamp)}
+                          </time>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : (
+                    <p className={styles.railEmpty}>No recent profile or trade activity.</p>
+                  )}
+                </section>
+
+                <section className={styles.railSection}>
+                  <div className={styles.railHeading}>
+                    <h2>Milestones</h2>
+                    <button type="button" onClick={() => router.push("/leaderboard")}>Rankings</button>
+                  </div>
+                  <ul className={styles.milestoneList}>
+                    {milestones.map((milestone) => (
+                      <li
+                        key={milestone.id}
+                        className={milestone.earned ? styles.milestoneEarned : ""}
+                      >
+                        <img src={milestone.icon} alt="" />
+                        <div>
+                          <strong>{milestone.label}</strong>
+                          <span>{milestone.progress}</span>
+                        </div>
+                        <small>{milestone.earned ? "Earned" : "Locked"}</small>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              </aside>
+            </div>
+          </>
+        )}
       </section>
 
-      {selectingPfp && (
-        <div className={styles.pfpOverlay} role="dialog" aria-modal="true" aria-label="Choose profile picture">
-          <div className={styles.pfpModal}>
-            <div className={styles.pfpHeader}>
-              <h3>Choose your frog PFP</h3>
+      {selectingPfp ? (
+        <div
+          className={styles.pfpOverlay}
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setSelectingPfp(false);
+          }}
+        >
+          <div
+            className={styles.pfpDialog}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pfp-title"
+          >
+            <div className={styles.dialogHeader}>
+              <div>
+                <p className={styles.eyebrow}>Wallet collection</p>
+                <h2 id="pfp-title">Choose your profile frog</h2>
+              </div>
               <button
                 type="button"
                 className={styles.closeButton}
                 onClick={() => setSelectingPfp(false)}
-                aria-label="Close"
+                aria-label="Close profile frog picker"
+                title="Close"
               >
-                ×
+                &times;
               </button>
             </div>
-            {pfpError ? <p className={styles.errorBanner}>{pfpError}</p> : null}
+            {pfpError ? <p className={styles.dialogError}>{pfpError}</p> : null}
             <div className={styles.pfpGrid}>
-              {allNfts.length ? (
-                allNfts.map((nft) => {
-                  const num = extractNftNumber(nft.name, nft.collection);
-                  const displayName = cleanNftName(nft.name, num);
-                  const label = num ? `${displayName} #${num}` : displayName;
-                  const isCurrent = pfpMint === nft.id;
-                  return (
-                    <button
-                      key={nft.id}
-                      type="button"
-                      className={`${styles.pfpChoice} ${isCurrent ? styles.pfpChoiceActive : ""}`}
-                      onClick={() => handleSelectPfp(nft.id, nft.image ?? null)}
-                      disabled={pfpSaving}
-                    >
-                      <div className={styles.pfpImageWrap}>
-                        {nft.image ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={nft.image} alt={label} className={styles.pfpImage} referrerPolicy="no-referrer" />
-                        ) : (
-                          <div className={styles.nftPlaceholder}>{initialsFor(label)}</div>
-                        )}
-                      </div>
-                      <span className={styles.pfpLabel}>
-                        {label}
-                        {isCurrent ? " (current)" : ""}
-                      </span>
-                    </button>
-                  );
-                })
-              ) : (
-                <p className={styles.emptyState}>No frogs found in your wallet.</p>
-              )}
+              {allNfts.map((nft) => {
+                const number = extractNftNumber(nft.name, nft.collection);
+                const name = cleanNftName(nft.name, number);
+                const label = number ? `${name} #${number}` : name;
+                const isCurrent = pfpMint === nft.id;
+                return (
+                  <button
+                    key={nft.id}
+                    type="button"
+                    className={isCurrent ? styles.pfpChoiceActive : styles.pfpChoice}
+                    onClick={() => void handleSelectPfp(nft.id, nft.image)}
+                    disabled={pfpSaving}
+                  >
+                    <span className={styles.pfpImage}>
+                      {nft.image ? (
+                        <img src={nft.image} alt="" referrerPolicy="no-referrer" />
+                      ) : (
+                        initialsFor(label)
+                      )}
+                    </span>
+                    <span>{label}</span>
+                    <small>{isCurrent ? "Current" : "Select"}</small>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
-      )}
+      ) : null}
     </main>
   );
 }
