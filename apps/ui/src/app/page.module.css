@@ -528,9 +528,9 @@
     gap: 0.25rem;
   }
 
-  /* 840x40 asset => 21:1 ratio; keep ~16px gutters on narrow viewports */
+  /* 840x40 asset => 21:1 ratio; reserve space for both header controls. */
   .brandLogo {
-    height: min(0.9rem, calc((100vw - 2rem) / 21));
+    height: min(0.9rem, calc((100vw - 7rem) / 21));
   }
 
   .tagline {

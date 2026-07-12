@@ -110,21 +110,6 @@ export default function Home() {
             <div className={styles.menuWalletWrapper} onClick={closeMenu}>
               <WalletButton className={styles.menuWallet} />
             </div>
-            <button
-              type="button"
-              className={styles.menuItem}
-              onClick={() => {
-                closeMenu();
-                router.push("/ribbot");
-              }}
-            >
-              <img
-                src="/chat.svg"
-                alt=""
-                className={styles.menuIcon}
-              />
-              <span>RIBBOT</span>
-            </button>
             {connected && !isV1 ? (
               <button
                 type="button"
@@ -167,7 +152,7 @@ export default function Home() {
       </header>
       <Ticker />
       <div className={styles.swapStack}>
-        {isV1 ? <BuybackProgress /> : null}
+        <BuybackProgress />
         <SwapCard />
       </div>
     </main>

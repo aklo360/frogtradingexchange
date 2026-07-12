@@ -367,7 +367,6 @@ export default function ProfilePage() {
               <WalletButton className={homeStyles.menuWallet} />
             </div>
             {[
-              ["/ribbot", "/chat.svg", "RIBBOT"],
               ["/profile", "/bank.svg", "PROFILE"],
             ].map(([href, icon, label]) => (
               <button

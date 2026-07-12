@@ -3,12 +3,6 @@
   align-items: stretch;
   justify-content: flex-start;
   padding: 132px 0 72px;
-  background-color: #05080b;
-  background-image:
-    linear-gradient(rgba(85, 217, 255, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(85, 217, 255, 0.035) 1px, transparent 1px);
-  background-size: 34px 34px;
-  filter: none;
 }
 
 .shell {
