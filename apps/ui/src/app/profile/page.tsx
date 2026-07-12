@@ -30,6 +30,19 @@ type FetchState = "idle" | "loading" | "error";
 
 const profileCache = new Map<string, AppProfileResponse>();
 
+const readResponseError = async (response: Response, fallback: string) => {
+  const text = await response.text();
+  if (!text) return fallback;
+  try {
+    const parsed = JSON.parse(text) as { error?: unknown };
+    return typeof parsed.error === "string" && parsed.error.trim()
+      ? parsed.error
+      : fallback;
+  } catch {
+    return text;
+  }
+};
+
 const initialsFor = (value: string) =>
   value.trim().slice(0, 2).toUpperCase() || "??";
 
@@ -192,8 +205,9 @@ export default function ProfilePage() {
         }),
       });
       if (!response.ok) {
-        const text = await response.text();
-        throw new Error(text || "Profile creation failed");
+        throw new Error(
+          await readResponseError(response, "Profile creation failed"),
+        );
       }
       const data = (await response.json()) as AppProfileResponse;
       profileCache.set(walletAddress, data);
@@ -227,8 +241,12 @@ export default function ProfilePage() {
         }),
       });
       if (!response.ok) {
-        const text = await response.text();
-        throw new Error(text || `Failed with status ${response.status}`);
+        throw new Error(
+          await readResponseError(
+            response,
+            `Failed with status ${response.status}`,
+          ),
+        );
       }
       const data = (await response.json()) as AppProfileResponse;
       profileCache.set(walletAddress, data);
@@ -349,11 +367,8 @@ export default function ProfilePage() {
               <WalletButton className={homeStyles.menuWallet} />
             </div>
             {[
-              ["/perps", "/sparkle.svg", "PERPS"],
               ["/ribbot", "/chat.svg", "RIBBOT"],
-              ["/airdrop", "/sparkle.svg", "AIRDROP"],
               ["/profile", "/bank.svg", "PROFILE"],
-              ["/leaderboard", "/trophy.svg", "LEADERBOARD"],
             ].map(([href, icon, label]) => (
               <button
                 key={href}
@@ -456,6 +471,11 @@ export default function ProfilePage() {
               >
                 {profileSaving ? "Creating profile" : "Create profile"}
               </button>
+              {errorMessage ? (
+                <div className={styles.inlineError} role="alert">
+                  <span>{errorMessage}</span>
+                </div>
+              ) : null}
             </div>
           </section>
         ) : (
@@ -668,7 +688,6 @@ export default function ProfilePage() {
                 <section className={styles.railSection}>
                   <div className={styles.railHeading}>
                     <h2>Milestones</h2>
-                    <button type="button" onClick={() => router.push("/leaderboard")}>Rankings</button>
                   </div>
                   <ul className={styles.milestoneList}>
                     {milestones.map((milestone) => (

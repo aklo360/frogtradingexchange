@@ -80,12 +80,6 @@ export default function Home() {
           </button>
         </div>
         <div className={styles.rightControls}>
-          {connected && !isV1 ? (
-            <div className={styles.xpChip} aria-label="Your XP">
-              <span className={styles.xpValue}>4,269 XP</span>
-              <img src="/sparkle.svg" alt="" className={styles.sparkleIcon} />
-            </div>
-          ) : null}
           <button
             type="button"
             className={styles.speakerButton}
@@ -121,21 +115,6 @@ export default function Home() {
               className={styles.menuItem}
               onClick={() => {
                 closeMenu();
-                router.push("/perps");
-              }}
-            >
-              <img
-                src="/sparkle.svg"
-                alt=""
-                className={`${styles.menuIcon} ${styles.pixelIcon}`}
-              />
-              <span>PERPS</span>
-            </button>
-            <button
-              type="button"
-              className={styles.menuItem}
-              onClick={() => {
-                closeMenu();
                 router.push("/ribbot");
               }}
             >
@@ -145,21 +124,6 @@ export default function Home() {
                 className={styles.menuIcon}
               />
               <span>RIBBOT</span>
-            </button>
-            <button
-              type="button"
-              className={styles.menuItem}
-              onClick={() => {
-                closeMenu();
-                router.push("/airdrop");
-              }}
-            >
-              <img
-                src="/sparkle.svg"
-                alt=""
-                className={`${styles.menuIcon} ${styles.pixelIcon}`}
-              />
-              <span>AIRDROP</span>
             </button>
             {connected && !isV1 ? (
               <button
@@ -176,23 +140,6 @@ export default function Home() {
                   className={styles.menuIcon}
                 />
                 <span>PROFILE</span>
-              </button>
-            ) : null}
-            {!isV1 ? (
-              <button
-                type="button"
-                className={styles.menuItem}
-                onClick={() => {
-                  closeMenu();
-                  router.push("/leaderboard");
-                }}
-              >
-                <img
-                  src="/trophy.svg"
-                  alt=""
-                  className={`${styles.menuIcon} ${styles.pixelIcon} ${styles.trophyIcon}`}
-                />
-                <span>LEADERBOARD</span>
               </button>
             ) : null}
             {!isV1 ? (

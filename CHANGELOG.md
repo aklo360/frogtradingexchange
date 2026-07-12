@@ -84,6 +84,7 @@
 - Pixel trophy, wallet, swap, and sparkle icons in `/public`.
 
 ### Changed
+- Removed the unfinished `/perps`, `/leaderboard`, and `/airdrop` pages and all exchange navigation links to them until those products are ready. The connected-wallet placeholder XP chip was removed with the leaderboard surface.
 - Rebuilt the FTX `/ribbot` control page as a flat, responsive exchange workspace. Session access, account summary, trading defaults, wallet/Privy access, bot pause controls, watchlist, and hidden-token management now use a scan-first two-column desktop grid and linear mobile flow instead of nested neon cards; controls retain the existing FTX session/preference/wallet request contracts and all Privy identity and execution gates. The page navigation now matches the broader exchange shell. Empty and mocked populated states were browser-checked at 1440px and 390px with exact viewport-width layout and no overlapping controls.
 - The FTX `/ribbot` trading-defaults panel now uses a mode selector, responsive preset grids, separate buy/sell fee inputs, and explicit confirmation/sell-protection toggles. Authenticated mocked account state was browser-verified at 1440px and 390px with no horizontal overflow or overlapping controls.
 - Deterministic account-event writes now return the original persisted event after `INSERT OR IGNORE`, so duplicate reconciliation/manual-review writes retain the first authoritative execution timestamp instead of presenting a newer in-memory timestamp.
@@ -103,6 +104,8 @@
 - Top 3 leaderboard rows highlight gold/silver/bronze (avatar halo + text glow).
 
 ### Fixed
+- Restored the Pages-owned Tapestry profile API instead of proxying it to the FTX API Worker. Cloudflare-safe response construction, resilient optional profile enrichment, and visible creation errors allow the profile creation flow to complete or report the provider failure instead of appearing to do nothing.
+- Restored the public Privy app ID in the frontend build for the existing `/ribbot` ownership controls. Solana wallet auto-creation remains disabled, and no Privy secret or existing wallet was changed.
 - FTX no longer reports missing or unavailable Titan quote probing as a generic automation status. Instant Auto Buy, copytrade buys, bundle buys, sniper buys, and token-specific auto-buy now state that liquidity and price impact were not verified and that the result is not a safety pass; execution remains blocked before Privy.
 - The FTX `/ribbot` shell now keeps its bordered control surface inside narrow viewports and wraps long status text. Authenticated local fixtures verified the account-backed Sniper toggle and zero horizontal overflow at 390px and 1440px.
 - Advanced auto-buy/auto-sell responses can no longer remain staged and replay on a later cron after FTX loses the Privy response. Competing monitor runs cannot send the same claimed config, and reconciliation confirmation now contributes the canonical deterministic `swap_executed` event used by activity and estimated PNL.

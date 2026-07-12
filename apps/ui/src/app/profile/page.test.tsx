@@ -1,4 +1,10 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AppProfileResponse } from "@/lib/tapestry/types";
@@ -150,5 +156,52 @@ describe("ProfilePage", () => {
     expect(screen.queryByText("Points")).not.toBeInTheDocument();
 
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+  });
+
+  it("creates a missing profile and replaces the empty state", async () => {
+    mocks.walletAddress = "Config1111111111111111111111111111111111111";
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        Response.json({ error: "Profile not found" }, { status: 404 }),
+      )
+      .mockResolvedValueOnce(Response.json(profileFixture()));
+
+    render(<ProfilePage />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Create profile" }),
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "pond-chief" }),
+    ).toBeVisible();
+    expect(fetch).toHaveBeenLastCalledWith(
+      "/api/tapestry/profiles",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("shows the API error when profile creation fails", async () => {
+    mocks.walletAddress = "SysvarRent111111111111111111111111111111111";
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        Response.json({ error: "Profile not found" }, { status: 404 }),
+      )
+      .mockResolvedValueOnce(
+        Response.json(
+          { error: "Profile service is temporarily unavailable" },
+          { status: 502 },
+        ),
+      );
+
+    render(<ProfilePage />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Create profile" }),
+    );
+
+    expect(
+      await screen.findByRole("alert"),
+    ).toHaveTextContent("Profile service is temporarily unavailable");
   });
 });

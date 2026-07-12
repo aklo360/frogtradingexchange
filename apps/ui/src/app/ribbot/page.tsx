@@ -533,11 +533,8 @@ export default function RibbotControlPage() {
             </div>
             {[
               ["/", "/swap.svg", "SWAP"],
-              ["/perps", "/sparkle.svg", "PERPS"],
               ["/ribbot", "/chat.svg", "RIBBOT"],
               ["/profile", "/bank.svg", "PROFILE"],
-              ["/leaderboard", "/trophy.svg", "LEADERBOARD"],
-              ["/airdrop", "/sparkle.svg", "AIRDROP"],
             ].map(([href, icon, label]) => (
               <button
                 key={href}

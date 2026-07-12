@@ -1,6 +1,5 @@
 "use client";
 
-import { usePathname } from "next/navigation";
 import {
   createContext,
   useCallback,
@@ -20,9 +19,7 @@ type AudioContextValue = {
 const AudioContext = createContext<AudioContextValue | undefined>(undefined);
 
 export const AudioProvider = ({ children }: { children: ReactNode }) => {
-  const pathname = usePathname();
   const [muted, setMuted] = useState(true);
-  const audioEnabled = pathname !== "/airdrop";
 
   const toggleMuted = useCallback(() => {
     setMuted((prev) => !prev);
@@ -39,7 +36,7 @@ export const AudioProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <AudioContext.Provider value={value}>
-      {audioEnabled ? <BackgroundAudio muted={muted} /> : null}
+      <BackgroundAudio muted={muted} />
       {children}
     </AudioContext.Provider>
   );

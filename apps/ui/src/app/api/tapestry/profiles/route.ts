@@ -39,15 +39,11 @@ import {
   DEFAULT_NFT_COLLECTION,
 } from "@/lib/tapestry/constants";
 
-const INVALID_REQUEST = NextResponse.json(
-  { error: "Invalid request" },
-  { status: 400 },
-);
+const invalidRequest = () =>
+  NextResponse.json({ error: "Invalid request" }, { status: 400 });
 
-const NOT_FOUND = NextResponse.json(
-  { error: "Profile not found" },
-  { status: 404 },
-);
+const profileNotFound = () =>
+  NextResponse.json({ error: "Profile not found" }, { status: 404 });
 
 /**
  * SECURITY: Validate origin header for CSRF protection
@@ -392,6 +388,19 @@ const summarizeTrades = (
     .slice(0, 5);
 };
 
+async function optionalProfileData<T>(
+  label: string,
+  request: Promise<T>,
+  fallback: T,
+): Promise<T> {
+  try {
+    return await request;
+  } catch (error) {
+    console.warn(`Optional Tapestry profile data failed: ${label}`, error);
+    return fallback;
+  }
+}
+
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const walletAddress = url.searchParams.get("walletAddress");
@@ -508,14 +517,14 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(payload);
       } catch (error) {
         if (error instanceof TapestryAPIError && error.status === 404) {
-          return NOT_FOUND;
+          return profileNotFound();
         }
         throw error;
       }
     }
 
     if (!walletAddress) {
-      return INVALID_REQUEST;
+      return invalidRequest();
     }
 
     const [identities, appProfiles] = await Promise.all([
@@ -526,7 +535,7 @@ export async function GET(request: NextRequest) {
     const target = pickAppProfile(appProfiles);
 
     if (!target) {
-      return NOT_FOUND;
+      return profileNotFound();
     }
 
     let details: TapestryProfileDetails | null = null;
@@ -699,7 +708,7 @@ export async function POST(request: NextRequest) {
   try {
     body = await request.json();
   } catch {
-    return INVALID_REQUEST;
+    return invalidRequest();
   }
 
   // SECURITY: Input validation
@@ -772,7 +781,23 @@ export async function POST(request: NextRequest) {
         : undefined,
     });
 
-    const details = await getProfileDetails(result.profile.id);
+    let details: TapestryProfileDetails;
+    try {
+      details = await getProfileDetails(result.profile.id);
+    } catch (error) {
+      console.warn(
+        "Created Tapestry profile but details are not available yet",
+        error,
+      );
+      return NextResponse.json({
+        profile: normalizeProfile(result.profile),
+        socialCounts: { followers: 0, following: 0 },
+        walletAddress: body.walletAddress ?? result.walletAddress,
+        operation: result.operation,
+        pfpMint: body.pfpMint ?? null,
+        pfpImage: pfpImage ?? body.image ?? null,
+      } satisfies ProfileResponsePayload);
+    }
 
     const walletToQuery =
       body.walletAddress ?? result.walletAddress ?? details.walletAddress;
@@ -782,33 +807,77 @@ export async function POST(request: NextRequest) {
 
     if (walletToQuery) {
       [identities, appProfiles] = await Promise.all([
-        getProfilesForIdentity(walletToQuery),
-        getProfilesByWalletAddress(walletToQuery),
+        optionalProfileData(
+          "identities",
+          getProfilesForIdentity(walletToQuery),
+          [],
+        ),
+        optionalProfileData(
+          "wallet profiles",
+          getProfilesByWalletAddress(walletToQuery),
+          [],
+        ),
       ]);
     }
 
-  const selectedIdentity = appProfiles?.find(
-    (entry) => entry.profile.id === details.profile.id,
-  );
+    const selectedIdentity = appProfiles?.find(
+      (entry) => entry.profile.id === details.profile.id,
+    );
 
-  const [
-    followersRes,
-    followingRes,
-    walletsRes,
-    walletSocialCounts,
-    activity,
-    swapActivity,
-    tradeHistory,
-    contents,
-  ] = await Promise.all([
-    getProfileFollowers(details.profile.id, { pageSize: 12 }),
-    getProfileFollowing(details.profile.id, { pageSize: 12 }),
-    getProfileWallets(details.profile.id),
-    walletToQuery ? getWalletSocialCounts(walletToQuery) : Promise.resolve(null),
-      getActivityFeed(details.profile.username, { pageSize: 25 }),
-      getSwapActivity(details.profile.username, { pageSize: 10 }),
-      walletToQuery ? getTradeHistory(walletToQuery, { limit: 50 }) : Promise.resolve<TradeHistoryEntry[]>([]),
-      getProfileContents(details.profile.id, { pageSize: 12 }),
+    const [
+      followersRes,
+      followingRes,
+      walletsRes,
+      walletSocialCounts,
+      activity,
+      swapActivity,
+      tradeHistory,
+      contents,
+    ] = await Promise.all([
+      optionalProfileData(
+        "followers",
+        getProfileFollowers(details.profile.id, { pageSize: 12 }),
+        { profiles: [], page: 1, pageSize: 12, totalCount: 0 },
+      ),
+      optionalProfileData(
+        "following",
+        getProfileFollowing(details.profile.id, { pageSize: 12 }),
+        { profiles: [], page: 1, pageSize: 12, totalCount: 0 },
+      ),
+      optionalProfileData(
+        "wallets",
+        getProfileWallets(details.profile.id),
+        [],
+      ),
+      walletToQuery
+        ? optionalProfileData(
+            "wallet social counts",
+            getWalletSocialCounts(walletToQuery),
+            null,
+          )
+        : Promise.resolve(null),
+      optionalProfileData(
+        "activity",
+        getActivityFeed(details.profile.username, { pageSize: 25 }),
+        [],
+      ),
+      optionalProfileData(
+        "swap activity",
+        getSwapActivity(details.profile.username, { pageSize: 10 }),
+        [],
+      ),
+      walletToQuery
+        ? optionalProfileData(
+            "trade history",
+            getTradeHistory(walletToQuery, { limit: 50 }),
+            [],
+          )
+        : Promise.resolve<TradeHistoryEntry[]>([]),
+      optionalProfileData(
+        "contents",
+        getProfileContents(details.profile.id, { pageSize: 12 }),
+        { items: [], total: 0 },
+      ),
     ]);
 
     const nftRes =

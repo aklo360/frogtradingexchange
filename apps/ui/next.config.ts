@@ -26,10 +26,17 @@ const loadRootEnv = () => {
 loadRootEnv();
 
 const isDev = process.env.NODE_ENV !== "production";
+const publicPrivyAppId =
+  process.env.NEXT_PUBLIC_PRIVY_APP_ID?.trim() ||
+  "cmqhok8w0007y0cjo5znwyvt5";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  env: {
+    // Privy app IDs are public client identifiers; secrets remain Worker-only.
+    NEXT_PUBLIC_PRIVY_APP_ID: publicPrivyAppId,
+  },
   async rewrites() {
     if (!isDev) return [];
     return [
