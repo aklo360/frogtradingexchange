@@ -127,18 +127,6 @@ export default function Home() {
                 <span>PROFILE</span>
               </button>
             ) : null}
-            {!isV1 ? (
-              <>
-                <button type="button" className={styles.menuItem} onClick={closeMenu}>
-                  <img src="/info.svg" alt="" className={styles.menuIcon} />
-                  <span>Help</span>
-                </button>
-                <button type="button" className={styles.menuItem} onClick={closeMenu}>
-                  <img src="/chat.svg" alt="" className={styles.menuIcon} />
-                  <span>Chat</span>
-                </button>
-              </>
-            ) : null}
           </nav>
         </div>
         {menuOpen ? (

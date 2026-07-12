@@ -82,7 +82,7 @@
 - Pixel trophy, wallet, swap, and sparkle icons in `/public`.
 
 ### Changed
-- Removed the unfinished `/perps`, `/leaderboard`, `/airdrop`, and `/ribbot` web pages and all exchange navigation links to them. The standalone Ribbot Telegram runtime and FTX trading APIs are unchanged. The connected-wallet placeholder XP chip was removed with the leaderboard surface.
+- Removed the unfinished `/perps`, `/leaderboard`, `/airdrop`, and `/ribbot` web pages and all exchange navigation links to them, along with the inactive Help and Chat menu entries. The standalone Ribbot Telegram runtime and FTX trading APIs are unchanged. The connected-wallet placeholder XP chip was removed with the leaderboard surface.
 - The Frog buyback-and-burn tracker now renders on the homepage in both `v1` and `v2`, and the Profile page uses the exact homepage background instead of a separate grid treatment.
 - Deterministic account-event writes now return the original persisted event after `INSERT OR IGNORE`, so duplicate reconciliation/manual-review writes retain the first authoritative execution timestamp instead of presenting a newer in-memory timestamp.
 - Sniper configs now retain non-secret recent-pool cursor, source, liquidity, market-cap, organic-score, processed-mint, execution, and reconciliation metadata. A dry-run observation consumes the launch cursor so enabling live execution later cannot retroactively trade an already observed pool.
