@@ -30,7 +30,7 @@ export const normalizeEpochMilliseconds = (value: number) =>
   value > 0 && value < 10_000_000_000 ? value * 1000 : value;
 
 export const buildProfileMilestones = (input: {
-  frogCount: number;
+  nftCount: number;
   followerCount: number;
   recentTradeCount: number;
 }): ProfileMilestone[] => [
@@ -45,8 +45,8 @@ export const buildProfileMilestones = (input: {
     id: "samurai",
     label: "Samurai",
     icon: "/badge-samurai.svg",
-    earned: input.frogCount >= 5,
-    progress: `${Math.min(input.frogCount, 5)}/5 frogs held`,
+    earned: input.nftCount >= 5,
+    progress: `${Math.min(input.nftCount, 5)}/5 NFTs held`,
   },
   {
     id: "trailblazer",

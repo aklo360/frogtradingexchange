@@ -11,6 +11,7 @@ import {
   runAirdropPayout,
 } from "./airdrop";
 import { runBuyback } from "./buyback";
+import { getNftHoldings } from "./nftHoldings";
 import {
   getBuyback,
   getInfo,
@@ -28,6 +29,7 @@ import {
   getTradingBotConfig,
   getTradingBotOrders,
   getTradingBotOperatorReviews,
+  getTradingBotNfts,
   getTradingBotPnl,
   getTradingBotReferrals,
   postTradingBotControlCode,
@@ -239,6 +241,9 @@ export default {
     if (url.pathname === "/api/frogx/buyback" && request.method === "GET") {
       return getBuyback(env);
     }
+    if (url.pathname === "/api/frogx/nfts" && request.method === "GET") {
+      return getNftHoldings(request, env);
+    }
     if (
       url.pathname === "/api/frogx/trading-bot/config" &&
       request.method === "GET"
@@ -280,6 +285,12 @@ export default {
       request.method === "GET"
     ) {
       return getTradingBotPnl(request, env);
+    }
+    if (
+      url.pathname === "/api/frogx/trading-bot/nfts" &&
+      request.method === "GET"
+    ) {
+      return getTradingBotNfts(request, env);
     }
     if (
       url.pathname === "/api/frogx/trading-bot/referrals" &&

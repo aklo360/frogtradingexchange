@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { NftHoldingsPage } from "@/lib/nfts";
 import type { AppProfileResponse } from "@/lib/tapestry/types";
 
 const mocks = vi.hoisted(() => ({
@@ -102,20 +103,39 @@ const profileFixture = (): AppProfileResponse => ({
       updatedAt: "2023-11-14T22:13:20.000Z",
     },
   ],
-  nfts: {
-    page: 1,
-    limit: 1000,
-    total: 1,
-    items: [
-      {
-        id: "frog-mint-42",
-        name: "Solana Business Frog #42",
-        image: null,
-        collection: "Solana Business Frogs",
-      },
-    ],
-  },
 });
+
+const nftFixture = (): NftHoldingsPage => ({
+  walletAddress: mocks.walletAddress,
+  page: 1,
+  limit: 8,
+  total: 1,
+  items: [
+    {
+      mint: "frog-mint-42",
+      name: "Solana Business Frog #42",
+      description: null,
+      image: null,
+      collection: "Solana Business Frogs",
+      owner: mocks.walletAddress,
+      compressed: false,
+      attributes: [],
+    },
+  ],
+});
+
+const mockProfileAndNfts = (
+  profileResponse: Response | (() => Promise<Response>),
+  nftResponse: Response = Response.json(nftFixture()),
+) => {
+  vi.mocked(fetch).mockImplementation(async (input) => {
+    const url = String(input);
+    if (url.startsWith("/api/frogx/nfts?")) return nftResponse;
+    return typeof profileResponse === "function"
+      ? profileResponse()
+      : profileResponse;
+  });
+};
 
 describe("ProfilePage", () => {
   beforeEach(() => {
@@ -164,7 +184,10 @@ describe("ProfilePage", () => {
 
   it("offers a retry when the profile request fails", async () => {
     mocks.walletAddress = "Vote111111111111111111111111111111111111111";
-    vi.mocked(fetch).mockResolvedValue(new Response("upstream unavailable", { status: 502 }));
+    mockProfileAndNfts(
+      new Response("upstream unavailable", { status: 502 }),
+      Response.json(nftFixture()),
+    );
 
     render(<ProfilePage />);
 
@@ -174,6 +197,8 @@ describe("ProfilePage", () => {
     expect(
       screen.getByRole("button", { name: "Retry social sync" }),
     ).toBeEnabled();
+    expect(screen.getByRole("heading", { name: "NFT holdings" })).toBeVisible();
+    expect(screen.getByText("Frog #42")).toBeVisible();
   });
 
   it("recovers and displays the existing Telegram Privy wallet", () => {
@@ -229,13 +254,13 @@ describe("ProfilePage", () => {
 
   it("renders only real profile, collection, trade, and milestone values", async () => {
     mocks.walletAddress = "Stake11111111111111111111111111111111111111";
-    vi.mocked(fetch).mockResolvedValue(Response.json(profileFixture()));
+    mockProfileAndNfts(Response.json(profileFixture()));
 
     render(<ProfilePage />);
 
     expect(await screen.findByRole("heading", { name: "pond-chief" })).toBeVisible();
     expect(screen.getByText("Trading from the lily pad.")).toBeVisible();
-    expect(screen.getByText("Frogs").parentElement).toHaveTextContent("1");
+    expect(screen.getByText("NFTs").parentElement).toHaveTextContent("1");
     expect(screen.getByText("Followers").parentElement).toHaveTextContent("12");
     expect(screen.getByText("Recent trades").parentElement).toHaveTextContent("1");
     expect(screen.getByText("Frog #42")).toBeVisible();
@@ -243,16 +268,28 @@ describe("ProfilePage", () => {
     expect(screen.getByText("Samurai").closest("li")).toHaveTextContent("Locked");
     expect(screen.queryByText("Points")).not.toBeInTheDocument();
 
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/frogx/nfts?walletAddress="),
+      expect.objectContaining({ cache: "no-store" }),
+    );
   });
 
   it("creates a missing profile and replaces the empty state", async () => {
     mocks.walletAddress = "Config1111111111111111111111111111111111111";
-    vi.mocked(fetch)
-      .mockResolvedValueOnce(
-        Response.json({ error: "Profile not found" }, { status: 404 }),
-      )
-      .mockResolvedValueOnce(Response.json(profileFixture()));
+    let profileGetComplete = false;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/frogx/nfts?")) {
+        return Response.json(nftFixture());
+      }
+      if (init?.method === "POST") return Response.json(profileFixture());
+      if (!profileGetComplete) {
+        profileGetComplete = true;
+        return Response.json({ error: "Profile not found" }, { status: 404 });
+      }
+      return Response.json(profileFixture());
+    });
 
     render(<ProfilePage />);
 
@@ -271,16 +308,19 @@ describe("ProfilePage", () => {
 
   it("shows the API error when profile creation fails", async () => {
     mocks.walletAddress = "SysvarRent111111111111111111111111111111111";
-    vi.mocked(fetch)
-      .mockResolvedValueOnce(
-        Response.json({ error: "Profile not found" }, { status: 404 }),
-      )
-      .mockResolvedValueOnce(
-        Response.json(
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/frogx/nfts?")) {
+        return Response.json(nftFixture());
+      }
+      if (init?.method === "POST") {
+        return Response.json(
           { error: "Profile service is temporarily unavailable" },
           { status: 502 },
-        ),
-      );
+        );
+      }
+      return Response.json({ error: "Profile not found" }, { status: 404 });
+    });
 
     render(<ProfilePage />);
 

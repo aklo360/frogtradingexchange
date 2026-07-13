@@ -7,6 +7,7 @@ import { PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 
 import { getTitanConfig, type Env } from "./env";
 import { getPlatformFeeConfig } from "./fees";
+import { fetchWalletNftHoldings } from "./nftHoldings";
 import { postQuotes, postSwap } from "./routes";
 
 const DEFAULT_PRIVY_API_BASE_URL = "https://api.privy.io/v1";
@@ -2855,6 +2856,74 @@ export async function getTradingBotAccount(
       `https://trading-bot-account.local/account?telegramUserId=${telegramUserId}`,
     ),
   );
+}
+
+export async function getTradingBotNfts(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  const auth = authorizeTradingBotRequest(request, env);
+  if (auth === "missing") {
+    return json(
+      {
+        status: "not_configured",
+        required: ["RIBBOT_TRADING_BOT_TOKEN"],
+      },
+      { status: 503 },
+    );
+  }
+  if (auth === "denied") {
+    return json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const url = new URL(request.url);
+  const telegramUserId = stringValue(url.searchParams.get("telegramUserId"));
+  if (!telegramUserId || !TELEGRAM_USER_ID_PATTERN.test(telegramUserId)) {
+    return json({ error: "telegramUserId is required" }, { status: 400 });
+  }
+
+  const accountResult = await getStoredTradingBotAccount(env, telegramUserId);
+  if ("error" in accountResult) {
+    const status = accountResult.status ?? 503;
+    return json(
+      {
+        status: status === 404 ? "wallet_required" : "unavailable",
+        error: accountResult.error,
+      },
+      { status },
+    );
+  }
+  const walletAddress = accountResult.account?.solanaWalletAddress;
+  if (!walletAddress) {
+    return json(
+      { status: "wallet_required", error: "No active FTX wallet is linked" },
+      { status: 404 },
+    );
+  }
+
+  try {
+    const holdings = await fetchWalletNftHoldings(env, {
+      walletAddress,
+      page: url.searchParams.has("page")
+        ? Number(url.searchParams.get("page"))
+        : undefined,
+      limit: url.searchParams.has("limit")
+        ? Number(url.searchParams.get("limit"))
+        : undefined,
+    });
+    return json({ status: "ready", ...holdings });
+  } catch (error) {
+    console.error("[trading-bot] NFT holdings lookup failed", error);
+    const notConfigured =
+      error instanceof Error && error.message.includes("not configured");
+    return json(
+      {
+        status: "unavailable",
+        error: "NFT holdings are temporarily unavailable",
+      },
+      { status: notConfigured ? 503 : 502 },
+    );
+  }
 }
 
 export async function getTradingBotPnl(

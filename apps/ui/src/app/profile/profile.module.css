@@ -711,6 +711,28 @@
   cursor: default;
 }
 
+.nftMint {
+  overflow: hidden;
+  color: #718780;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.64rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collectionLoading {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.nftLoadingTile {
+  width: 100%;
+  aspect-ratio: 1 / 1.45;
+  border: 1px solid #23343d;
+  border-radius: 6px;
+}
+
 .collectionEmpty {
   min-height: 220px;
   display: grid;
@@ -1219,6 +1241,11 @@
   }
 
   .nftGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
+  }
+
+  .collectionLoading {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 9px;
   }

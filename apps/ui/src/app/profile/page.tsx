@@ -10,12 +10,9 @@ import { useWallet } from "@solana/wallet-adapter-react";
 
 import { Ticker } from "@/components/Ticker";
 import { WalletButton } from "@/components/WalletButton";
+import type { NftHolding, NftHoldingsPage } from "@/lib/nfts";
 import { getPrivySolanaWallets, getTelegramAccount } from "@/lib/privy";
 import { isV1 } from "@/lib/version";
-import {
-  DEFAULT_INCLUDE_COMPRESSED,
-  DEFAULT_NFT_COLLECTION,
-} from "@/lib/tapestry/constants";
 import type { AppProfileResponse } from "@/lib/tapestry/types";
 import { useAudio } from "@/providers/AudioProvider";
 import homeStyles from "../page.module.css";
@@ -78,8 +75,162 @@ const cleanNftName = (raw: string, number: string | null) => {
   let cleaned = raw.replace(/solana business frogs?/gi, "");
   if (number) cleaned = cleaned.replace(new RegExp(`#?${number}`, "gi"), "");
   cleaned = cleaned.replace(/#?\d+/g, "").replace(/\s+/g, " ").trim();
-  return cleaned || "Frog";
+  return cleaned || (/frog/i.test(raw) ? "Frog" : "NFT");
 };
+
+type NftHoldingsSectionProps = {
+  items: NftHolding[];
+  total: number;
+  page: number;
+  totalPages: number;
+  state: FetchState;
+  error: string | null;
+  pfpMint: string | null;
+  pfpSaving: boolean;
+  onPageChange: (page: number) => void;
+  onRefresh: () => void;
+  onSelectPfp?: (mint: string, image: string | null) => void;
+};
+
+function NftHoldingsSection({
+  items,
+  total,
+  page,
+  totalPages,
+  state,
+  error,
+  pfpMint,
+  pfpSaving,
+  onPageChange,
+  onRefresh,
+  onSelectPfp,
+}: NftHoldingsSectionProps) {
+  const currentStart = total ? (page - 1) * PROFILE_NFT_PAGE_SIZE + 1 : 0;
+  const currentEnd = Math.min(page * PROFILE_NFT_PAGE_SIZE, total);
+
+  return (
+    <section className={styles.collectionSection} aria-label="NFT holdings">
+      <div className={styles.sectionHeader}>
+        <div>
+          <p className={styles.eyebrow}>Active wallet</p>
+          <h2>NFT holdings</h2>
+        </div>
+        {totalPages > 1 ? (
+          <div className={styles.pagination}>
+            <span>
+              {currentStart}-{currentEnd} of {total}
+            </span>
+            <button
+              type="button"
+              onClick={() => onPageChange(Math.max(1, page - 1))}
+              disabled={page <= 1 || state === "loading"}
+              aria-label="Previous NFTs"
+              title="Previous NFTs"
+            >
+              &lsaquo;
+            </button>
+            <button
+              type="button"
+              onClick={() => onPageChange(Math.min(totalPages, page + 1))}
+              disabled={page >= totalPages || state === "loading"}
+              aria-label="Next NFTs"
+              title="Next NFTs"
+            >
+              &rsaquo;
+            </button>
+          </div>
+        ) : (
+          <span className={styles.sectionCount}>
+            {state === "loading" && !items.length ? "Loading" : `${total} total`}
+          </span>
+        )}
+      </div>
+
+      {items.length ? (
+        <div className={styles.nftGrid} aria-busy={state === "loading"}>
+          {items.map((nft) => {
+            const number = extractNftNumber(nft.name, nft.collection);
+            const name = cleanNftName(nft.name, number);
+            const label = number ? `${name} #${number}` : name;
+            const isCurrent = pfpMint === nft.mint;
+            return (
+              <article key={nft.mint} className={styles.nftCard}>
+                <div className={styles.nftImageWrap}>
+                  {nft.image ? (
+                    <img
+                      src={nft.image}
+                      alt={label}
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <span>{initialsFor(label)}</span>
+                  )}
+                  {isCurrent ? (
+                    <span className={styles.currentMarker}>Profile</span>
+                  ) : null}
+                </div>
+                <div className={styles.nftMeta}>
+                  <strong title={nft.name}>{label}</strong>
+                  {onSelectPfp ? (
+                    <button
+                      type="button"
+                      onClick={() => onSelectPfp(nft.mint, nft.image)}
+                      disabled={isCurrent || pfpSaving}
+                    >
+                      {isCurrent ? "Current profile" : "Set as profile"}
+                    </button>
+                  ) : (
+                    <span className={styles.nftMint} title={nft.mint}>
+                      {formatShortAddress(nft.mint)}
+                    </span>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      ) : state === "loading" ? (
+        <div className={styles.collectionLoading} aria-live="polite">
+          <div className={`${styles.skeleton} ${styles.nftLoadingTile}`} />
+          <div className={`${styles.skeleton} ${styles.nftLoadingTile}`} />
+          <div className={`${styles.skeleton} ${styles.nftLoadingTile}`} />
+          <div className={`${styles.skeleton} ${styles.nftLoadingTile}`} />
+        </div>
+      ) : state === "error" ? (
+        <div className={styles.collectionEmpty}>
+          <img src="/sbficon.png" alt="" />
+          <div>
+            <h3>Holdings unavailable</h3>
+            <p>{error ?? "NFT holdings could not be loaded right now."}</p>
+          </div>
+          <button
+            type="button"
+            className={styles.secondaryButton}
+            onClick={onRefresh}
+          >
+            Retry
+          </button>
+        </div>
+      ) : (
+        <div className={styles.collectionEmpty}>
+          <img src="/sbficon.png" alt="" />
+          <div>
+            <h3>No NFTs in this wallet</h3>
+            <p>This active wallet does not currently hold any NFTs.</p>
+          </div>
+          <button
+            type="button"
+            className={styles.secondaryButton}
+            onClick={onRefresh}
+          >
+            Refresh
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -125,6 +276,9 @@ export default function ProfilePage() {
   );
   const [fetchState, setFetchState] = useState<FetchState>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [nftData, setNftData] = useState<NftHoldingsPage | null>(null);
+  const [nftFetchState, setNftFetchState] = useState<FetchState>("idle");
+  const [nftError, setNftError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [nftPage, setNftPage] = useState(1);
   const [selectingPfp, setSelectingPfp] = useState(false);
@@ -135,6 +289,7 @@ export default function ProfilePage() {
   const [copiedAddress, setCopiedAddress] = useState<string | null>(null);
   const [pfpError, setPfpError] = useState<string | null>(null);
   const [requestVersion, setRequestVersion] = useState(0);
+  const [nftRequestVersion, setNftRequestVersion] = useState(0);
 
   const closeMenu = () => setMenuOpen(false);
 
@@ -179,13 +334,9 @@ export default function ProfilePage() {
       try {
         const query = new URLSearchParams({
           walletAddress,
-          nftPage: "1",
-          nftLimit: "1000",
+          nftCollection: "all",
+          nftMode: "all",
         });
-        if (DEFAULT_NFT_COLLECTION) {
-          query.set("nftCollection", DEFAULT_NFT_COLLECTION);
-        }
-        if (DEFAULT_INCLUDE_COMPRESSED) query.set("nftMode", "all");
 
         const response = await fetch(
           `/api/tapestry/profiles?${query.toString()}`,
@@ -224,7 +375,73 @@ export default function ProfilePage() {
     };
   }, [requestVersion, walletAddress]);
 
+  useEffect(() => {
+    if (!walletAddress) {
+      setNftData(null);
+      setNftFetchState("idle");
+      setNftError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    let canceled = false;
+
+    const loadNfts = async () => {
+      setNftFetchState("loading");
+      setNftError(null);
+
+      try {
+        const query = new URLSearchParams({
+          walletAddress,
+          page: String(nftPage),
+          limit: String(PROFILE_NFT_PAGE_SIZE),
+        });
+        const response = await fetch(`/api/frogx/nfts?${query.toString()}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          throw new Error(
+            await readResponseError(
+              response,
+              "NFT holdings are temporarily unavailable",
+            ),
+          );
+        }
+
+        const data = (await response.json()) as NftHoldingsPage;
+        if (canceled) return;
+        const lastPage = Math.max(
+          1,
+          Math.ceil(Math.max(data.total, 1) / PROFILE_NFT_PAGE_SIZE),
+        );
+        if (nftPage > lastPage) {
+          setNftPage(lastPage);
+          return;
+        }
+        setNftData(data);
+        setNftFetchState("idle");
+      } catch (error) {
+        if (controller.signal.aborted || canceled) return;
+        console.error("Error loading NFT holdings", error);
+        setNftFetchState("error");
+        setNftError(
+          error instanceof Error
+            ? error.message
+            : "NFT holdings are temporarily unavailable",
+        );
+      }
+    };
+
+    void loadNfts();
+    return () => {
+      canceled = true;
+      controller.abort();
+    };
+  }, [nftPage, nftRequestVersion, walletAddress]);
+
   const refreshProfile = () => setRequestVersion((version) => version + 1);
+  const refreshNfts = () => setNftRequestVersion((version) => version + 1);
 
   const handleCreateWallet = async () => {
     if (!authenticated || privyWallets.length > 0) return;
@@ -333,8 +550,8 @@ export default function ProfilePage() {
   const followingTotal =
     profileData?.following?.total ?? profileData?.socialCounts.following ?? 0;
   const profileRecord = profileData?.profile;
-  const allNfts = profileData?.nfts?.items ?? [];
-  const totalFrogs = Math.max(profileData?.nfts?.total ?? 0, allNfts.length);
+  const allNfts = nftData?.items ?? [];
+  const totalNfts = Math.max(nftData?.total ?? 0, allNfts.length);
   const recentTradeCount = profileData?.tradeHistory?.length ?? 0;
   const pfpMint = profileData?.pfpMint ?? null;
   const avatarUrl =
@@ -345,28 +562,34 @@ export default function ProfilePage() {
   const displayBio = profileRecord?.bio?.trim() || "No bio added yet.";
   const timeline = profileData ? buildProfileTimeline(profileData) : [];
   const milestones = buildProfileMilestones({
-    frogCount: totalFrogs,
+    nftCount: totalNfts,
     followerCount: followerTotal,
     recentTradeCount,
   });
 
   const nftTotalPages = Math.max(
     1,
-    Math.ceil(Math.max(totalFrogs, 1) / PROFILE_NFT_PAGE_SIZE),
+    Math.ceil(Math.max(totalNfts, 1) / PROFILE_NFT_PAGE_SIZE),
   );
-  const hasPrevNfts = nftPage > 1;
-  const hasNextNfts = nftPage < nftTotalPages;
-  const currentStart = totalFrogs
-    ? (nftPage - 1) * PROFILE_NFT_PAGE_SIZE + 1
-    : 0;
-  const currentEnd = Math.min(
-    nftPage * PROFILE_NFT_PAGE_SIZE,
-    totalFrogs || allNfts.length,
-  );
-  const pagedNfts = allNfts.slice(
-    (nftPage - 1) * PROFILE_NFT_PAGE_SIZE,
-    nftPage * PROFILE_NFT_PAGE_SIZE,
-  );
+  const nftHoldingsSection = walletAddress ? (
+    <NftHoldingsSection
+      items={allNfts}
+      total={totalNfts}
+      page={nftPage}
+      totalPages={nftTotalPages}
+      state={nftFetchState}
+      error={nftError}
+      pfpMint={pfpMint}
+      pfpSaving={pfpSaving}
+      onPageChange={setNftPage}
+      onRefresh={refreshNfts}
+      onSelectPfp={
+        profileData
+          ? (mint, image) => void handleSelectPfp(mint, image)
+          : undefined
+      }
+    />
+  ) : null;
 
   if (isV1) return null;
 
@@ -597,59 +820,68 @@ export default function ProfilePage() {
             </div>
           </section>
         ) : fetchState === "loading" && !profileData ? (
-          <section className={styles.loadingState} aria-live="polite">
-            <div className={`${styles.skeleton} ${styles.skeletonAvatar}`} />
-            <div className={styles.loadingLines}>
-              <div className={`${styles.skeleton} ${styles.skeletonLabel}`} />
-              <div className={`${styles.skeleton} ${styles.skeletonTitle}`} />
-              <div className={`${styles.skeleton} ${styles.skeletonBody}`} />
-            </div>
-            <span>Syncing wallet profile</span>
-          </section>
+          <>
+            <section className={styles.loadingState} aria-live="polite">
+              <div className={`${styles.skeleton} ${styles.skeletonAvatar}`} />
+              <div className={styles.loadingLines}>
+                <div className={`${styles.skeleton} ${styles.skeletonLabel}`} />
+                <div className={`${styles.skeleton} ${styles.skeletonTitle}`} />
+                <div className={`${styles.skeleton} ${styles.skeletonBody}`} />
+              </div>
+              <span>Syncing wallet profile</span>
+            </section>
+            {nftHoldingsSection}
+          </>
         ) : fetchState === "error" && !profileData ? (
-          <section className={styles.emptyProfileState}>
-            <img src="/sbficon.png" alt="" className={styles.emptyMascot} />
-            <div>
-              <p className={styles.eyebrow}>Social profile sync paused</p>
-              <h1>Your wallet is connected.</h1>
-              <p>
-                Your Privy account and wallet remain available. Frog profile
-                data could not be synced from Tapestry right now.
-              </p>
-              <button
-                type="button"
-                className={styles.primaryButton}
-                onClick={refreshProfile}
-              >
-                Retry social sync
-              </button>
-            </div>
-          </section>
+          <>
+            <section className={styles.emptyProfileState}>
+              <img src="/sbficon.png" alt="" className={styles.emptyMascot} />
+              <div>
+                <p className={styles.eyebrow}>Social profile sync paused</p>
+                <h1>Your wallet is connected.</h1>
+                <p>
+                  Your Privy account and wallet remain available. Frog profile
+                  data could not be synced from Tapestry right now.
+                </p>
+                <button
+                  type="button"
+                  className={styles.primaryButton}
+                  onClick={refreshProfile}
+                >
+                  Retry social sync
+                </button>
+              </div>
+            </section>
+            {nftHoldingsSection}
+          </>
         ) : !profileData ? (
-          <section className={styles.emptyProfileState}>
-            <img src="/sbficon.png" alt="" className={styles.emptyMascot} />
-            <div>
-              <p className={styles.eyebrow}>Wallet connected</p>
-              <h1>Create your Frog profile.</h1>
-              <p>
-                Start with a wallet-derived handle. Your owned frogs can become
-                the profile picture after creation.
-              </p>
-              <button
-                type="button"
-                className={styles.primaryButton}
-                onClick={() => void handleCreateProfile()}
-                disabled={profileSaving}
-              >
-                {profileSaving ? "Creating profile" : "Create profile"}
-              </button>
-              {errorMessage ? (
-                <div className={styles.inlineError} role="alert">
-                  <span>{errorMessage}</span>
-                </div>
-              ) : null}
-            </div>
-          </section>
+          <>
+            <section className={styles.emptyProfileState}>
+              <img src="/sbficon.png" alt="" className={styles.emptyMascot} />
+              <div>
+                <p className={styles.eyebrow}>Wallet connected</p>
+                <h1>Create your Frog profile.</h1>
+                <p>
+                  Start with a wallet-derived handle. Your owned NFTs can become
+                  the profile picture after creation.
+                </p>
+                <button
+                  type="button"
+                  className={styles.primaryButton}
+                  onClick={() => void handleCreateProfile()}
+                  disabled={profileSaving}
+                >
+                  {profileSaving ? "Creating profile" : "Create profile"}
+                </button>
+                {errorMessage ? (
+                  <div className={styles.inlineError} role="alert">
+                    <span>{errorMessage}</span>
+                  </div>
+                ) : null}
+              </div>
+            </section>
+            {nftHoldingsSection}
+          </>
         ) : (
           <>
             <section className={styles.identityBand}>
@@ -711,8 +943,8 @@ export default function ProfilePage() {
 
             <dl className={styles.metricsBar}>
               <div>
-                <dt>Frogs</dt>
-                <dd>{totalFrogs.toLocaleString()}</dd>
+                <dt>NFTs</dt>
+                <dd>{totalNfts.toLocaleString()}</dd>
               </div>
               <div>
                 <dt>Followers</dt>
@@ -738,96 +970,7 @@ export default function ProfilePage() {
             ) : null}
 
             <div className={styles.workspace}>
-              <section className={styles.collectionSection}>
-                <div className={styles.sectionHeader}>
-                  <div>
-                    <p className={styles.eyebrow}>Wallet collection</p>
-                    <h2>Solana Business Frogs</h2>
-                  </div>
-                  {nftTotalPages > 1 ? (
-                    <div className={styles.pagination}>
-                      <span>
-                        {currentStart}-{currentEnd} of {totalFrogs}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setNftPage((page) => Math.max(1, page - 1))}
-                        disabled={!hasPrevNfts}
-                        aria-label="Previous frogs"
-                        title="Previous frogs"
-                      >
-                        &lsaquo;
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setNftPage((page) => Math.min(nftTotalPages, page + 1))}
-                        disabled={!hasNextNfts}
-                        aria-label="Next frogs"
-                        title="Next frogs"
-                      >
-                        &rsaquo;
-                      </button>
-                    </div>
-                  ) : (
-                    <span className={styles.sectionCount}>{totalFrogs} total</span>
-                  )}
-                </div>
-
-                {pagedNfts.length ? (
-                  <div className={styles.nftGrid}>
-                    {pagedNfts.map((nft) => {
-                      const number = extractNftNumber(nft.name, nft.collection);
-                      const name = cleanNftName(nft.name, number);
-                      const label = number ? `${name} #${number}` : name;
-                      const isCurrent = pfpMint === nft.id;
-                      return (
-                        <article key={nft.id} className={styles.nftCard}>
-                          <div className={styles.nftImageWrap}>
-                            {nft.image ? (
-                              <img
-                                src={nft.image}
-                                alt={label}
-                                loading="lazy"
-                                referrerPolicy="no-referrer"
-                              />
-                            ) : (
-                              <span>{initialsFor(label)}</span>
-                            )}
-                            {isCurrent ? (
-                              <span className={styles.currentMarker}>Profile</span>
-                            ) : null}
-                          </div>
-                          <div className={styles.nftMeta}>
-                            <strong>{label}</strong>
-                            <button
-                              type="button"
-                              onClick={() => void handleSelectPfp(nft.id, nft.image)}
-                              disabled={isCurrent || pfpSaving}
-                            >
-                              {isCurrent ? "Current frog" : "Set as profile"}
-                            </button>
-                          </div>
-                        </article>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className={styles.collectionEmpty}>
-                    <img src="/sbficon.png" alt="" />
-                    <div>
-                      <h3>No frogs in this wallet</h3>
-                      <p>Your collection will appear here after the next profile sync.</p>
-                    </div>
-                    <button
-                      type="button"
-                      className={styles.secondaryButton}
-                      onClick={refreshProfile}
-                    >
-                      Refresh
-                    </button>
-                  </div>
-                )}
-              </section>
+              {nftHoldingsSection}
 
               <aside className={styles.sideRail}>
                 <section className={styles.railSection}>
@@ -918,13 +1061,13 @@ export default function ProfilePage() {
                 const number = extractNftNumber(nft.name, nft.collection);
                 const name = cleanNftName(nft.name, number);
                 const label = number ? `${name} #${number}` : name;
-                const isCurrent = pfpMint === nft.id;
+                const isCurrent = pfpMint === nft.mint;
                 return (
                   <button
-                    key={nft.id}
+                    key={nft.mint}
                     type="button"
                     className={isCurrent ? styles.pfpChoiceActive : styles.pfpChoice}
-                    onClick={() => void handleSelectPfp(nft.id, nft.image)}
+                    onClick={() => void handleSelectPfp(nft.mint, nft.image)}
                     disabled={pfpSaving}
                   >
                     <span className={styles.pfpImage}>

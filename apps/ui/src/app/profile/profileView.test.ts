@@ -32,7 +32,7 @@ describe("profile view model", () => {
 
   it("earns milestones only from their documented thresholds", () => {
     const milestones = buildProfileMilestones({
-      frogCount: 4,
+      nftCount: 4,
       followerCount: 10,
       recentTradeCount: 1,
     });

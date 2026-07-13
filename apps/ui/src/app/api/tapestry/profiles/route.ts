@@ -750,7 +750,7 @@ export async function POST(request: NextRequest) {
         page: 1,
         limit: 1000,
         collectionAddress: null,
-        includeCompressed: DEFAULT_INCLUDE_COMPRESSED,
+        includeCompressed: true,
       });
       const owns = nftCheck.items.some((item) => item.id === pfpMint);
       if (!owns) {
@@ -886,8 +886,8 @@ export async function POST(request: NextRequest) {
             ownerAddress: walletToQuery,
             page: 1,
             limit: 1000,
-            collectionAddress: DEFAULT_NFT_COLLECTION,
-            includeCompressed: DEFAULT_INCLUDE_COMPRESSED,
+            collectionAddress: null,
+            includeCompressed: true,
           }).catch(() => ({
             items: [],
             page: 1,
