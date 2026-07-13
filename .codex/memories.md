@@ -1,12 +1,12 @@
 # Memories [keep under 2200 chars]
 
-FTX/FrogX is a Next 15 UI and Cloudflare Worker. Ribbot is a standalone Telegraf runtime and thin UX/cache; wallet, risk, lifecycle, NFT ownership, and execution authority remain in FTX. Eliza is obsolete and must not be deployed.
+FTX/FrogX is a Next 15 UI and Cloudflare Worker. Ribbot is a standalone Telegraf runtime and thin UX/cache; wallet, risk, lifecycle, Business Frog ownership, and execution authority remain in FTX. Eliza is obsolete and must not be deployed.
 
 The public UI exposes only `/` and `/profile`; unfinished `/perps`, `/leaderboard`, `/airdrop`, and `/ribbot` pages are removed. The buyback-and-burn tracker remains on the homepage and Profile shares its background. Pages keeps `/api/tapestry/*` local and proxies other `/api/*` calls to the API Worker.
 
 Profile uses Privy React with the same app ID as Ribbot, offers Telegram-first recovery, lists Solana wallets, and creates a wallet only after an explicit action when none exists. Privy secrets remain Worker-only. The target wallet `9p9UcNW4QaAcw6pRAMFtaJHuNChL6dFFnbYzARTnJSWY` was live on Solana on 2026-07-12; ownership recovery still requires the user's Privy Telegram login.
 
-NFT holdings are independent of Tapestry. `/api/frogx/nfts` serves bounded DAS holdings to Profile; authenticated `/api/frogx/trading-bot/nfts` derives Ribbot's active wallet from the stored Telegram account. Both verify current ownership, include compressed NFTs, and exclude burned/mismatched assets. Profile holdings remain visible during social outages.
+Business Frog holdings are independent of Tapestry. `/api/frogx/nfts` aggregates every embedded Privy wallet shown in Profile; authenticated `/api/frogx/trading-bot/nfts` derives all embedded slots from the stored Telegram account. Both hard-filter collection `J7r...BkeMG` and verify current ownership. Profile holdings remain visible during social outages.
 
 Accounts persist up to ten embedded Privy Solana wallet slots plus an active ID; linked external wallets are excluded. Legacy fields project the active slot. Telegram selection is complete; additional wallet creation/import, disperse, bridge, and true multi-wallet Bundle Buy are not.
 

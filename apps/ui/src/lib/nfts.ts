@@ -11,6 +11,7 @@ export type NftHolding = {
 
 export type NftHoldingsPage = {
   walletAddress: string;
+  walletAddresses: string[];
   items: NftHolding[];
   page: number;
   limit: number;

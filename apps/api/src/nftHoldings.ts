@@ -2,6 +2,10 @@ import type { Env } from "./env";
 
 const SOLANA_ADDRESS_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const MAX_PAGE_SIZE = 50;
+const MAX_WALLET_COUNT = 10;
+
+export const BUSINESS_FROG_COLLECTION =
+  "J7rxtKmEpNJEtrfkagiTF1gsmLyVus6BQZFY4ouBkeMG";
 
 type DasAsset = {
   id?: string;
@@ -43,6 +47,7 @@ export type NftHolding = {
 
 export type NftHoldingsPage = {
   walletAddress: string;
+  walletAddresses: string[];
   items: NftHolding[];
   page: number;
   limit: number;
@@ -174,10 +179,52 @@ export async function fetchWalletNftHoldings(
 
   return {
     walletAddress: input.walletAddress,
+    walletAddresses: [input.walletAddress],
     items,
     page: result?.page ?? page,
     limit: result?.limit ?? limit,
     total: result?.total ?? items.length,
+  };
+}
+
+export async function fetchWalletsNftHoldings(
+  env: Env,
+  input: {
+    walletAddresses: string[];
+    page?: number;
+    limit?: number;
+  },
+): Promise<NftHoldingsPage> {
+  const walletAddresses = [...new Set(input.walletAddresses)].slice(
+    0,
+    MAX_WALLET_COUNT,
+  );
+  const page = boundedInteger(input.page, 1, 1, 10_000);
+  const limit = boundedInteger(input.limit, 24, 1, MAX_PAGE_SIZE);
+  const pages = await Promise.all(
+    walletAddresses.map((walletAddress) =>
+      fetchWalletNftHoldings(env, {
+        walletAddress,
+        page: 1,
+        limit: MAX_PAGE_SIZE,
+        collectionAddress: BUSINESS_FROG_COLLECTION,
+      }),
+    ),
+  );
+  const uniqueItems = new Map<string, NftHolding>();
+  for (const walletPage of pages) {
+    for (const item of walletPage.items) uniqueItems.set(item.mint, item);
+  }
+  const allItems = [...uniqueItems.values()];
+  const start = (page - 1) * limit;
+
+  return {
+    walletAddress: walletAddresses[0] ?? "",
+    walletAddresses,
+    items: allItems.slice(start, start + limit),
+    page,
+    limit,
+    total: allItems.length,
   };
 }
 
@@ -186,17 +233,32 @@ export async function getNftHoldings(
   env: Env,
 ): Promise<Response> {
   const url = new URL(request.url);
-  const walletAddress = url.searchParams.get("walletAddress")?.trim() ?? "";
-  if (!SOLANA_ADDRESS_PATTERN.test(walletAddress)) {
+  const walletAddresses = [
+    ...new Set(
+      url.searchParams
+        .getAll("walletAddress")
+        .map((walletAddress) => walletAddress.trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (
+    walletAddresses.length === 0 ||
+    walletAddresses.length > MAX_WALLET_COUNT ||
+    walletAddresses.some(
+      (walletAddress) => !SOLANA_ADDRESS_PATTERN.test(walletAddress),
+    )
+  ) {
     return Response.json(
-      { error: "walletAddress must be a Solana address" },
+      {
+        error: `Provide between 1 and ${MAX_WALLET_COUNT} valid Solana walletAddress values`,
+      },
       { status: 400 },
     );
   }
 
   try {
-    const result = await fetchWalletNftHoldings(env, {
-      walletAddress,
+    const result = await fetchWalletsNftHoldings(env, {
+      walletAddresses,
       page: boundedInteger(url.searchParams.get("page"), 1, 1, 10_000),
       limit: boundedInteger(
         url.searchParams.get("limit"),
@@ -204,7 +266,6 @@ export async function getNftHoldings(
         1,
         MAX_PAGE_SIZE,
       ),
-      collectionAddress: url.searchParams.get("collectionAddress"),
     });
     return Response.json(result, {
       headers: { "Cache-Control": "public, max-age=20" },

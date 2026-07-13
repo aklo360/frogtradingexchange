@@ -107,6 +107,7 @@ const profileFixture = (): AppProfileResponse => ({
 
 const nftFixture = (): NftHoldingsPage => ({
   walletAddress: mocks.walletAddress,
+  walletAddresses: [mocks.walletAddress],
   page: 1,
   limit: 8,
   total: 1,
@@ -197,8 +198,74 @@ describe("ProfilePage", () => {
     expect(
       screen.getByRole("button", { name: "Retry social sync" }),
     ).toBeEnabled();
-    expect(screen.getByRole("heading", { name: "NFT holdings" })).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Solana Business Frogs" }),
+    ).toBeVisible();
     expect(screen.getByText("Frog #42")).toBeVisible();
+  });
+
+  it("does not expose an upstream HTML error document in the holdings panel", async () => {
+    mocks.walletAddress = "BPFLoader1111111111111111111111111111111111";
+    mockProfileAndNfts(
+      Response.json(profileFixture()),
+      new Response("<!DOCTYPE html><title>Worker threw exception</title>", {
+        status: 500,
+        headers: { "Content-Type": "text/html" },
+      }),
+    );
+
+    render(<ProfilePage />);
+
+    expect(await screen.findByText("Holdings unavailable")).toBeVisible();
+    expect(
+      screen.getByText("NFT holdings are temporarily unavailable"),
+    ).toBeVisible();
+    expect(screen.queryByText(/DOCTYPE html/)).not.toBeInTheDocument();
+  });
+
+  it("requests Business Frogs from every embedded Privy wallet", async () => {
+    const firstWallet = "9p9UcNW4QaAcw6pRAMFtaJHuNChL6dFFnbYzARTnJSWY";
+    const secondWallet = "Vote111111111111111111111111111111111111111";
+    mocks.privyAuthenticated = true;
+    mocks.linkedAccounts = [
+      {
+        type: "wallet",
+        chainType: "solana",
+        walletClientType: "privy",
+        address: firstWallet,
+      },
+      {
+        type: "wallet",
+        chainType: "solana",
+        walletClientType: "privy",
+        address: secondWallet,
+      },
+    ];
+    mockProfileAndNfts(
+      Response.json({ error: "Profile not found" }, { status: 404 }),
+      Response.json({
+        ...nftFixture(),
+        walletAddress: firstWallet,
+        walletAddresses: [firstWallet, secondWallet],
+        items: [],
+        total: 0,
+      }),
+    );
+
+    render(<ProfilePage />);
+
+    await waitFor(() => {
+      const nftCall = vi
+        .mocked(fetch)
+        .mock.calls.find(([input]) => String(input).startsWith("/api/frogx/nfts?"));
+      expect(nftCall).toBeDefined();
+      const query = new URL(String(nftCall?.[0]), "https://frogx.test")
+        .searchParams;
+      expect(query.getAll("walletAddress")).toEqual([
+        firstWallet,
+        secondWallet,
+      ]);
+    });
   });
 
   it("recovers and displays the existing Telegram Privy wallet", () => {
@@ -260,7 +327,7 @@ describe("ProfilePage", () => {
 
     expect(await screen.findByRole("heading", { name: "pond-chief" })).toBeVisible();
     expect(screen.getByText("Trading from the lily pad.")).toBeVisible();
-    expect(screen.getByText("NFTs").parentElement).toHaveTextContent("1");
+    expect(screen.getByText("Frogs").parentElement).toHaveTextContent("1");
     expect(screen.getByText("Followers").parentElement).toHaveTextContent("12");
     expect(screen.getByText("Recent trades").parentElement).toHaveTextContent("1");
     expect(screen.getByText("Frog #42")).toBeVisible();
@@ -270,7 +337,7 @@ describe("ProfilePage", () => {
 
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
     expect(fetch).toHaveBeenCalledWith(
-      expect.stringContaining("/api/frogx/nfts?walletAddress="),
+      expect.stringMatching(/^\/api\/frogx\/nfts\?.*walletAddress=/),
       expect.objectContaining({ cache: "no-store" }),
     );
   });
@@ -300,7 +367,7 @@ describe("ProfilePage", () => {
     expect(
       await screen.findByRole("heading", { name: "pond-chief" }),
     ).toBeVisible();
-    expect(fetch).toHaveBeenLastCalledWith(
+    expect(fetch).toHaveBeenCalledWith(
       "/api/tapestry/profiles",
       expect.objectContaining({ method: "POST" }),
     );

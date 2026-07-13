@@ -9,25 +9,49 @@ const methodHasBody = (method) => {
 
 const cloneHeaders = (headers) => {
   const copy = new Headers();
+  const skipped = new Set([
+    "host",
+    "content-length",
+    "connection",
+    "cf-connecting-ip",
+    "cf-ipcountry",
+    "cf-ray",
+    "cf-visitor",
+    "cdn-loop",
+  ]);
   headers.forEach((value, key) => {
-    if (key.toLowerCase() === "host") return;
+    if (skipped.has(key.toLowerCase())) return;
     copy.set(key, value);
   });
   return copy;
 };
 
 const proxyFetch = async (request, target) => {
-  const init = {
-    method: request.method,
-    headers: cloneHeaders(request.headers),
-    redirect: request.redirect,
-  };
+  const body = methodHasBody(request.method)
+    ? await request.arrayBuffer()
+    : undefined;
+  const execute = () =>
+    fetch(target, {
+      method: request.method,
+      headers: cloneHeaders(request.headers),
+      redirect: request.redirect,
+      body: body?.slice(0),
+    });
 
-  if (methodHasBody(request.method)) {
-    init.body = await request.arrayBuffer();
+  try {
+    return await execute();
+  } catch (firstError) {
+    console.error("[api-proxy] upstream request failed; retrying", firstError);
+    try {
+      return await execute();
+    } catch (secondError) {
+      console.error("[api-proxy] upstream retry failed", secondError);
+      return Response.json(
+        { error: "FTX API is temporarily unavailable" },
+        { status: 502 },
+      );
+    }
   }
-
-  return fetch(target, init);
 };
 
 const getNextWorker = async () => {

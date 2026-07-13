@@ -7,7 +7,7 @@ import { PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 
 import { getTitanConfig, type Env } from "./env";
 import { getPlatformFeeConfig } from "./fees";
-import { fetchWalletNftHoldings } from "./nftHoldings";
+import { fetchWalletsNftHoldings } from "./nftHoldings";
 import { postQuotes, postSwap } from "./routes";
 
 const DEFAULT_PRIVY_API_BASE_URL = "https://api.privy.io/v1";
@@ -2893,17 +2893,27 @@ export async function getTradingBotNfts(
       { status },
     );
   }
-  const walletAddress = accountResult.account?.solanaWalletAddress;
-  if (!walletAddress) {
+  const account = accountResult.account;
+  const walletAddresses = [
+    ...new Set([
+      ...(account?.wallets ?? [])
+        .filter((wallet) => wallet.walletSource === "privy")
+        .map((wallet) => wallet.solanaWalletAddress),
+      ...(account?.walletSource !== "external" && account?.solanaWalletAddress
+        ? [account.solanaWalletAddress]
+        : []),
+    ]),
+  ];
+  if (!walletAddresses.length) {
     return json(
-      { status: "wallet_required", error: "No active FTX wallet is linked" },
+      { status: "wallet_required", error: "No embedded FTX wallet is linked" },
       { status: 404 },
     );
   }
 
   try {
-    const holdings = await fetchWalletNftHoldings(env, {
-      walletAddress,
+    const holdings = await fetchWalletsNftHoldings(env, {
+      walletAddresses,
       page: url.searchParams.has("page")
         ? Number(url.searchParams.get("page"))
         : undefined,

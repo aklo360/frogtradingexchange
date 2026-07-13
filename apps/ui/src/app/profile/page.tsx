@@ -33,6 +33,12 @@ const profileCache = new Map<string, AppProfileResponse>();
 const readResponseError = async (response: Response, fallback: string) => {
   const text = await response.text();
   if (!text) return fallback;
+  if (
+    response.headers.get("content-type")?.includes("text/html") ||
+    text.trimStart().startsWith("<")
+  ) {
+    return fallback;
+  }
   try {
     const parsed = JSON.parse(text) as { error?: unknown };
     return typeof parsed.error === "string" && parsed.error.trim()
@@ -89,6 +95,7 @@ type NftHoldingsSectionProps = {
   pfpSaving: boolean;
   onPageChange: (page: number) => void;
   onRefresh: () => void;
+  profileWalletAddress?: string;
   onSelectPfp?: (mint: string, image: string | null) => void;
 };
 
@@ -103,6 +110,7 @@ function NftHoldingsSection({
   pfpSaving,
   onPageChange,
   onRefresh,
+  profileWalletAddress,
   onSelectPfp,
 }: NftHoldingsSectionProps) {
   const currentStart = total ? (page - 1) * PROFILE_NFT_PAGE_SIZE + 1 : 0;
@@ -112,8 +120,8 @@ function NftHoldingsSection({
     <section className={styles.collectionSection} aria-label="NFT holdings">
       <div className={styles.sectionHeader}>
         <div>
-          <p className={styles.eyebrow}>Active wallet</p>
-          <h2>NFT holdings</h2>
+          <p className={styles.eyebrow}>Embedded wallets</p>
+          <h2>Solana Business Frogs</h2>
         </div>
         {totalPages > 1 ? (
           <div className={styles.pagination}>
@@ -153,6 +161,8 @@ function NftHoldingsSection({
             const name = cleanNftName(nft.name, number);
             const label = number ? `${name} #${number}` : name;
             const isCurrent = pfpMint === nft.mint;
+            const canSetProfile =
+              Boolean(onSelectPfp) && nft.owner === profileWalletAddress;
             return (
               <article key={nft.mint} className={styles.nftCard}>
                 <div className={styles.nftImageWrap}>
@@ -172,17 +182,17 @@ function NftHoldingsSection({
                 </div>
                 <div className={styles.nftMeta}>
                   <strong title={nft.name}>{label}</strong>
-                  {onSelectPfp ? (
+                  {canSetProfile ? (
                     <button
                       type="button"
-                      onClick={() => onSelectPfp(nft.mint, nft.image)}
+                      onClick={() => onSelectPfp?.(nft.mint, nft.image)}
                       disabled={isCurrent || pfpSaving}
                     >
                       {isCurrent ? "Current profile" : "Set as profile"}
                     </button>
                   ) : (
                     <span className={styles.nftMint} title={nft.mint}>
-                      {formatShortAddress(nft.mint)}
+                      {formatShortAddress(nft.owner)}
                     </span>
                   )}
                 </div>
@@ -216,8 +226,8 @@ function NftHoldingsSection({
         <div className={styles.collectionEmpty}>
           <img src="/sbficon.png" alt="" />
           <div>
-            <h3>No NFTs in this wallet</h3>
-            <p>This active wallet does not currently hold any NFTs.</p>
+            <h3>No Business Frogs found</h3>
+            <p>Your connected wallets do not currently hold any Solana Business Frogs.</p>
           </div>
           <button
             type="button"
@@ -269,6 +279,19 @@ export default function ProfilePage() {
     () => primaryPrivyWallet?.address ?? publicKey?.toBase58() ?? "",
     [primaryPrivyWallet?.address, publicKey],
   );
+  const nftWalletAddresses = useMemo(() => {
+    const embedded = privyWallets
+      .filter((wallet) => wallet.embedded)
+      .map((wallet) => wallet.address);
+    const connectedAddress = publicKey?.toBase58();
+    return [
+      ...new Set([
+        ...embedded,
+        ...(embedded.length === 0 && connectedAddress ? [connectedAddress] : []),
+      ]),
+    ];
+  }, [privyWallets, publicKey]);
+  const nftWalletKey = nftWalletAddresses.join(",");
   const hasAccount = authenticated || connected;
 
   const [profileData, setProfileData] = useState<AppProfileResponse | null>(
@@ -311,7 +334,7 @@ export default function ProfilePage() {
   useEffect(() => {
     setNftPage(1);
     setSelectingPfp(false);
-  }, [walletAddress]);
+  }, [nftWalletKey, walletAddress]);
 
   useEffect(() => {
     if (!walletAddress) {
@@ -376,7 +399,7 @@ export default function ProfilePage() {
   }, [requestVersion, walletAddress]);
 
   useEffect(() => {
-    if (!walletAddress) {
+    if (!nftWalletKey) {
       setNftData(null);
       setNftFetchState("idle");
       setNftError(null);
@@ -385,6 +408,7 @@ export default function ProfilePage() {
 
     const controller = new AbortController();
     let canceled = false;
+    const walletAddresses = nftWalletKey.split(",").filter(Boolean);
 
     const loadNfts = async () => {
       setNftFetchState("loading");
@@ -392,10 +416,12 @@ export default function ProfilePage() {
 
       try {
         const query = new URLSearchParams({
-          walletAddress,
           page: String(nftPage),
           limit: String(PROFILE_NFT_PAGE_SIZE),
         });
+        for (const address of walletAddresses) {
+          query.append("walletAddress", address);
+        }
         const response = await fetch(`/api/frogx/nfts?${query.toString()}`, {
           cache: "no-store",
           signal: controller.signal,
@@ -438,7 +464,7 @@ export default function ProfilePage() {
       canceled = true;
       controller.abort();
     };
-  }, [nftPage, nftRequestVersion, walletAddress]);
+  }, [nftPage, nftRequestVersion, nftWalletKey]);
 
   const refreshProfile = () => setRequestVersion((version) => version + 1);
   const refreshNfts = () => setNftRequestVersion((version) => version + 1);
@@ -562,7 +588,7 @@ export default function ProfilePage() {
   const displayBio = profileRecord?.bio?.trim() || "No bio added yet.";
   const timeline = profileData ? buildProfileTimeline(profileData) : [];
   const milestones = buildProfileMilestones({
-    nftCount: totalNfts,
+    frogCount: totalNfts,
     followerCount: followerTotal,
     recentTradeCount,
   });
@@ -583,6 +609,7 @@ export default function ProfilePage() {
       pfpSaving={pfpSaving}
       onPageChange={setNftPage}
       onRefresh={refreshNfts}
+      profileWalletAddress={walletAddress}
       onSelectPfp={
         profileData
           ? (mint, image) => void handleSelectPfp(mint, image)
@@ -943,7 +970,7 @@ export default function ProfilePage() {
 
             <dl className={styles.metricsBar}>
               <div>
-                <dt>NFTs</dt>
+                <dt>Frogs</dt>
                 <dd>{totalNfts.toLocaleString()}</dd>
               </div>
               <div>

@@ -70,6 +70,7 @@ describe("NFT holdings", () => {
         attributes: [{ traitType: "Hat", value: "Wizard" }],
       },
     ]);
+    expect(result.walletAddresses).toEqual([WALLET]);
   });
 
   it("rejects malformed public wallet lookups before RPC", async () => {
@@ -85,12 +86,69 @@ describe("NFT holdings", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("aggregates Business Frogs across repeated embedded wallet parameters", async () => {
+    const secondWallet = "Vote111111111111111111111111111111111111111";
+    const fetchMock = vi.fn<typeof fetch>(async (_url, init) => {
+      const request = JSON.parse(String(init?.body)) as {
+        params: { ownerAddress: string; grouping: [string, string] };
+      };
+      expect(request.params.grouping).toEqual([
+        "collection",
+        "J7rxtKmEpNJEtrfkagiTF1gsmLyVus6BQZFY4ouBkeMG",
+      ]);
+      return Response.json({
+        result: {
+          page: 1,
+          limit: 50,
+          total: 1,
+          items: [
+            {
+              id: `frog-${request.params.ownerAddress}`,
+              ownership: { owner: request.params.ownerAddress },
+              grouping: [
+                {
+                  group_key: "collection",
+                  group_value:
+                    "J7rxtKmEpNJEtrfkagiTF1gsmLyVus6BQZFY4ouBkeMG",
+                },
+              ],
+              content: { metadata: { name: "Business Frog" } },
+            },
+          ],
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await getNftHoldings(
+      new Request(
+        `https://frogx.test/api/frogx/nfts?walletAddress=${WALLET}&walletAddress=${secondWallet}`,
+      ),
+      { SOLANA_RPC_URL: "https://rpc.test" } as Env,
+    );
+    const data = (await response.json()) as {
+      walletAddresses: string[];
+      total: number;
+      items: Array<{ owner: string }>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(data.walletAddresses).toEqual([WALLET, secondWallet]);
+    expect(data.total).toBe(2);
+    expect(data.items.map((item) => item.owner)).toEqual([
+      WALLET,
+      secondWallet,
+    ]);
+  });
+
   it("derives Ribbot holdings from the FTX account instead of request input", async () => {
+    const secondWallet = "Vote111111111111111111111111111111111111111";
+    const requestedOwners: string[] = [];
     const fetchMock = vi.fn<typeof fetch>(async (_url, init) => {
       const request = JSON.parse(String(init?.body)) as {
         params: { ownerAddress: string };
       };
-      expect(request.params.ownerAddress).toBe(WALLET);
+      requestedOwners.push(request.params.ownerAddress);
       return Response.json({
         result: { page: 1, limit: 5, total: 0, items: [] },
       });
@@ -106,6 +164,19 @@ describe("NFT holdings", () => {
             account: {
               telegramUserId: "123456",
               solanaWalletAddress: WALLET,
+              walletSource: "privy",
+              wallets: [
+                {
+                  walletId: "wallet-1",
+                  walletSource: "privy",
+                  solanaWalletAddress: WALLET,
+                },
+                {
+                  walletId: "wallet-2",
+                  walletSource: "privy",
+                  solanaWalletAddress: secondWallet,
+                },
+              ],
             },
           }),
       }),
@@ -128,5 +199,6 @@ describe("NFT holdings", () => {
 
     expect(response.status).toBe(200);
     expect(data).toMatchObject({ status: "ready", walletAddress: WALLET });
+    expect(requestedOwners).toEqual([WALLET, secondWallet]);
   });
 });
