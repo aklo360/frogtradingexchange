@@ -100,6 +100,121 @@
   object-fit: contain;
 }
 
+.accountBand {
+  margin-bottom: 18px;
+  border-top: 1px solid #18e299;
+  border-bottom: 1px solid #31444e;
+  background: #071015;
+}
+
+.accountHeading {
+  min-height: 86px;
+  padding: 20px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.accountHeading h1 {
+  margin: 0;
+  color: #f3fbf7;
+  font-family: var(--font-press-start), var(--font-geist-sans), system-ui,
+    sans-serif;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.privyStatus {
+  flex: 0 0 auto;
+  color: #18e299;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
+
+.walletInventory {
+  border-top: 1px solid #23343d;
+}
+
+.walletRow,
+.walletEmpty {
+  min-height: 78px;
+  padding: 15px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid #18262d;
+}
+
+.walletRow > div,
+.walletEmpty > div {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.walletRow span,
+.walletEmpty span,
+.accountFooter {
+  color: #718780;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
+.walletRow strong {
+  overflow: hidden;
+  color: #dce9e4;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.78rem;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.walletEmpty strong {
+  color: #dce9e4;
+  font-size: 0.82rem;
+}
+
+.walletRow .secondaryButton,
+.walletEmpty .primaryButton {
+  flex: 0 0 auto;
+}
+
+.accountFooter {
+  min-height: 48px;
+  padding: 10px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.accountSignOut {
+  border: 0;
+  background: transparent;
+  color: #ff9ac6;
+  font: inherit;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+
+.accountSignOut:focus-visible {
+  outline: 2px solid #ff4fa3;
+  outline-offset: 3px;
+}
+
+.connectActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .connectState,
 .emptyProfileState {
   min-height: 520px;
@@ -984,9 +1099,43 @@
   }
 
   .connectCopy .primaryButton,
+  .connectCopy .secondaryButton,
   .emptyProfileState .primaryButton {
     width: 100%;
     max-width: 320px;
+  }
+
+  .connectActions {
+    justify-content: center;
+  }
+
+  .accountBand {
+    margin-bottom: 12px;
+  }
+
+  .accountHeading,
+  .walletRow,
+  .walletEmpty,
+  .accountFooter {
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+
+  .accountHeading,
+  .walletRow,
+  .walletEmpty,
+  .accountFooter {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .walletRow strong {
+    font-size: 0.7rem;
+  }
+
+  .walletRow .secondaryButton,
+  .walletEmpty .primaryButton {
+    width: 100%;
   }
 
   .emptyMascot {

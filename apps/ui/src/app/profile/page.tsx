@@ -4,10 +4,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { usePrivy } from "@privy-io/react-auth";
+import { useCreateWallet } from "@privy-io/react-auth/solana";
 import { useWallet } from "@solana/wallet-adapter-react";
 
 import { Ticker } from "@/components/Ticker";
 import { WalletButton } from "@/components/WalletButton";
+import { getPrivySolanaWallets, getTelegramAccount } from "@/lib/privy";
 import { isV1 } from "@/lib/version";
 import {
   DEFAULT_INCLUDE_COMPRESSED,
@@ -81,11 +84,41 @@ const cleanNftName = (raw: string, number: string | null) => {
 export default function ProfilePage() {
   const router = useRouter();
   const { muted, toggleMuted } = useAudio();
-  const { publicKey, connected } = useWallet();
-  const walletAddress = useMemo(
-    () => publicKey?.toBase58() ?? "",
-    [publicKey],
+  const { publicKey, connected, disconnect } = useWallet();
+  const {
+    ready: privyReady,
+    authenticated,
+    user,
+    login,
+    logout,
+  } = usePrivy();
+  const { createWallet } = useCreateWallet();
+  const [createdWalletAddress, setCreatedWalletAddress] = useState<string | null>(
+    null,
   );
+  const privyWallets = useMemo(() => {
+    const wallets = getPrivySolanaWallets(user?.linkedAccounts);
+    if (
+      createdWalletAddress &&
+      !wallets.some((wallet) => wallet.address === createdWalletAddress)
+    ) {
+      return [
+        { id: null, address: createdWalletAddress, embedded: true },
+        ...wallets,
+      ];
+    }
+    return wallets;
+  }, [createdWalletAddress, user?.linkedAccounts]);
+  const telegramAccount = useMemo(
+    () => getTelegramAccount(user?.linkedAccounts),
+    [user?.linkedAccounts],
+  );
+  const primaryPrivyWallet = privyWallets[0];
+  const walletAddress = useMemo(
+    () => primaryPrivyWallet?.address ?? publicKey?.toBase58() ?? "",
+    [primaryPrivyWallet?.address, publicKey],
+  );
+  const hasAccount = authenticated || connected;
 
   const [profileData, setProfileData] = useState<AppProfileResponse | null>(
     null,
@@ -97,6 +130,9 @@ export default function ProfilePage() {
   const [selectingPfp, setSelectingPfp] = useState(false);
   const [pfpSaving, setPfpSaving] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
+  const [walletCreating, setWalletCreating] = useState(false);
+  const [walletError, setWalletError] = useState<string | null>(null);
+  const [copiedAddress, setCopiedAddress] = useState<string | null>(null);
   const [pfpError, setPfpError] = useState<string | null>(null);
   const [requestVersion, setRequestVersion] = useState(0);
 
@@ -189,6 +225,39 @@ export default function ProfilePage() {
   }, [requestVersion, walletAddress]);
 
   const refreshProfile = () => setRequestVersion((version) => version + 1);
+
+  const handleCreateWallet = async () => {
+    if (!authenticated || privyWallets.length > 0) return;
+    setWalletCreating(true);
+    setWalletError(null);
+    try {
+      const result = await createWallet();
+      setCreatedWalletAddress(result.wallet.address);
+    } catch (error) {
+      setWalletError(
+        error instanceof Error
+          ? error.message
+          : "The Solana wallet could not be created.",
+      );
+    } finally {
+      setWalletCreating(false);
+    }
+  };
+
+  const handleCopyWallet = async (address: string) => {
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopiedAddress(address);
+      window.setTimeout(() => setCopiedAddress(null), 1600);
+    } catch {
+      setWalletError("The wallet address could not be copied.");
+    }
+  };
+
+  const handleSignOut = async () => {
+    await logout();
+    if (connected) await disconnect();
+  };
 
   const handleCreateProfile = async () => {
     if (!walletAddress) return;
@@ -411,19 +480,120 @@ export default function ProfilePage() {
       <Ticker />
 
       <section className={styles.shell} aria-label="Frog profile">
-        {!connected || !walletAddress ? (
+        {authenticated ? (
+          <section className={styles.accountBand} aria-label="Privy account">
+            <div className={styles.accountHeading}>
+              <div>
+                <p className={styles.eyebrow}>FTX account</p>
+                <h1>
+                  {telegramAccount?.username
+                    ? `@${telegramAccount.username}`
+                    : telegramAccount?.firstName ?? "Privy account"}
+                </h1>
+              </div>
+              <span className={styles.privyStatus}>Privy secured</span>
+            </div>
+
+            <div className={styles.walletInventory}>
+              {privyWallets.length ? (
+                privyWallets.map((wallet, index) => (
+                  <div className={styles.walletRow} key={wallet.address}>
+                    <div>
+                      <span>
+                        {wallet.embedded ? "Embedded wallet" : "Linked wallet"}
+                        {index === 0 ? " · Active" : ""}
+                      </span>
+                      <strong title={wallet.address}>{wallet.address}</strong>
+                    </div>
+                    <button
+                      type="button"
+                      className={styles.secondaryButton}
+                      onClick={() => void handleCopyWallet(wallet.address)}
+                    >
+                      {copiedAddress === wallet.address ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <div className={styles.walletEmpty}>
+                  <div>
+                    <strong>No Solana wallet is linked yet.</strong>
+                    <span>
+                      Create one only if this is a new account. To recover a bot
+                      wallet, sign out and use the same Telegram account first.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className={styles.primaryButton}
+                    onClick={() => void handleCreateWallet()}
+                    disabled={walletCreating}
+                  >
+                    {walletCreating ? "Creating wallet" : "Create Solana wallet"}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className={styles.accountFooter}>
+              <span>
+                {telegramAccount
+                  ? "Telegram and web use this same Privy identity."
+                  : "Link or sign in with Telegram to use this account in the bot."}
+              </span>
+              <button
+                type="button"
+                className={styles.accountSignOut}
+                onClick={() => void handleSignOut()}
+              >
+                Sign out
+              </button>
+            </div>
+            {walletError ? (
+              <div className={styles.inlineError} role="alert">
+                <span>{walletError}</span>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
+        {!hasAccount ? (
           <section className={styles.connectState}>
             <div className={styles.connectArtwork} aria-hidden="true">
               <img src="/sbficon.png" alt="" />
             </div>
             <div className={styles.connectCopy}>
-              <p className={styles.eyebrow}>Frog profile</p>
-              <h1>Your wallet is your identity.</h1>
+              <p className={styles.eyebrow}>Recover or create account</p>
+              <h1>One Privy wallet, on web and Telegram.</h1>
               <p>
-                Connect a Solana wallet to load your profile, frogs, milestones,
-                and recent exchange activity.
+                Continue with the Telegram account you used in Ribbot to recover
+                its existing wallet. New users can sign up here, then explicitly
+                create a Solana wallet.
               </p>
-              <WalletButton className={styles.primaryButton} />
+              <div className={styles.connectActions}>
+                <button
+                  type="button"
+                  className={styles.primaryButton}
+                  onClick={() => login({ loginMethods: ["telegram"] })}
+                  disabled={!privyReady}
+                >
+                  {privyReady ? "Continue with Telegram" : "Loading account"}
+                </button>
+                <WalletButton className={styles.secondaryButton} />
+              </div>
+            </div>
+          </section>
+        ) : authenticated && !walletAddress ? (
+          <section className={styles.emptyProfileState}>
+            <img src="/sbficon.png" alt="" className={styles.emptyMascot} />
+            <div>
+              <p className={styles.eyebrow}>Account ready</p>
+              <h1>No Solana wallet is linked.</h1>
+              <p>
+                Recover an existing bot wallet by signing in with the same
+                Telegram account. Create a wallet only for a genuinely new
+                account.
+              </p>
             </div>
           </section>
         ) : fetchState === "loading" && !profileData ? (
@@ -440,15 +610,18 @@ export default function ProfilePage() {
           <section className={styles.emptyProfileState}>
             <img src="/sbficon.png" alt="" className={styles.emptyMascot} />
             <div>
-              <p className={styles.eyebrow}>Sync interrupted</p>
-              <h1>Profile data is unavailable.</h1>
-              <p>{errorMessage}</p>
+              <p className={styles.eyebrow}>Social profile sync paused</p>
+              <h1>Your wallet is connected.</h1>
+              <p>
+                Your Privy account and wallet remain available. Frog profile
+                data could not be synced from Tapestry right now.
+              </p>
               <button
                 type="button"
                 className={styles.primaryButton}
                 onClick={refreshProfile}
               >
-                Retry sync
+                Retry social sync
               </button>
             </div>
           </section>

@@ -11,6 +11,13 @@ import type { AppProfileResponse } from "@/lib/tapestry/types";
 
 const mocks = vi.hoisted(() => ({
   walletAddress: "",
+  privyReady: true,
+  privyAuthenticated: false,
+  linkedAccounts: [] as Array<Record<string, unknown>>,
+  createWallet: vi.fn(),
+  login: vi.fn(),
+  logout: vi.fn(),
+  disconnect: vi.fn(),
   push: vi.fn(),
   replace: vi.fn(),
   toggleMuted: vi.fn(),
@@ -26,7 +33,24 @@ vi.mock("@solana/wallet-adapter-react", () => ({
     publicKey: mocks.walletAddress
       ? { toBase58: () => mocks.walletAddress }
       : null,
+    disconnect: mocks.disconnect,
   }),
+}));
+
+vi.mock("@privy-io/react-auth", () => ({
+  usePrivy: () => ({
+    ready: mocks.privyReady,
+    authenticated: mocks.privyAuthenticated,
+    user: mocks.privyAuthenticated
+      ? { id: "did:privy:test", linkedAccounts: mocks.linkedAccounts }
+      : null,
+    login: mocks.login,
+    logout: mocks.logout,
+  }),
+}));
+
+vi.mock("@privy-io/react-auth/solana", () => ({
+  useCreateWallet: () => ({ createWallet: mocks.createWallet }),
 }));
 
 vi.mock("@/providers/AudioProvider", () => ({
@@ -96,6 +120,13 @@ const profileFixture = (): AppProfileResponse => ({
 describe("ProfilePage", () => {
   beforeEach(() => {
     mocks.walletAddress = "";
+    mocks.privyReady = true;
+    mocks.privyAuthenticated = false;
+    mocks.linkedAccounts = [];
+    mocks.createWallet.mockReset();
+    mocks.login.mockReset();
+    mocks.logout.mockReset();
+    mocks.disconnect.mockReset();
     mocks.push.mockReset();
     mocks.replace.mockReset();
     mocks.toggleMuted.mockReset();
@@ -112,7 +143,11 @@ describe("ProfilePage", () => {
   it("shows an honest connect state without placeholder profile metrics", () => {
     render(<ProfilePage />);
 
-    expect(screen.getByRole("heading", { name: "Your wallet is your identity." })).toBeVisible();
+    expect(
+      screen.getByRole("heading", {
+        name: "One Privy wallet, on web and Telegram.",
+      }),
+    ).toBeVisible();
     expect(screen.getAllByRole("button", { name: "Connect Wallet" })).not.toHaveLength(0);
     expect(screen.queryByText("Points")).not.toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalled();
@@ -134,9 +169,62 @@ describe("ProfilePage", () => {
     render(<ProfilePage />);
 
     expect(
-      await screen.findByRole("heading", { name: "Profile data is unavailable." }),
+      await screen.findByRole("heading", { name: "Your wallet is connected." }),
     ).toBeVisible();
-    expect(screen.getByRole("button", { name: "Retry sync" })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "Retry social sync" }),
+    ).toBeEnabled();
+  });
+
+  it("recovers and displays the existing Telegram Privy wallet", () => {
+    mocks.privyAuthenticated = true;
+    mocks.linkedAccounts = [
+      {
+        type: "telegram",
+        telegramUserId: "12345",
+        username: "frogtrader",
+      },
+      {
+        type: "wallet",
+        chainType: "solana",
+        walletClientType: "privy",
+        id: "wallet-id",
+        address: "9p9UcNW4QaAcw6pRAMFtaJHuNChL6dFFnbYzARTnJSWY",
+      },
+    ];
+    vi.mocked(fetch).mockImplementation(() => new Promise<Response>(() => undefined));
+
+    render(<ProfilePage />);
+
+    expect(screen.getByRole("heading", { name: "@frogtrader" })).toBeVisible();
+    expect(
+      screen.getByText("9p9UcNW4QaAcw6pRAMFtaJHuNChL6dFFnbYzARTnJSWY"),
+    ).toBeVisible();
+    expect(screen.getByText("Embedded wallet · Active")).toBeVisible();
+    expect(mocks.createWallet).not.toHaveBeenCalled();
+  });
+
+  it("creates a wallet only after an explicit click for a new web account", async () => {
+    mocks.privyAuthenticated = true;
+    mocks.linkedAccounts = [{ type: "email", address: "frog@example.com" }];
+    mocks.createWallet.mockResolvedValue({
+      wallet: { address: "NewWallet11111111111111111111111111111111111" },
+    });
+    vi.mocked(fetch).mockResolvedValue(
+      Response.json({ error: "Profile not found" }, { status: 404 }),
+    );
+
+    render(<ProfilePage />);
+    expect(mocks.createWallet).not.toHaveBeenCalled();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create Solana wallet" }),
+    );
+
+    expect(
+      await screen.findByText("NewWallet11111111111111111111111111111111111"),
+    ).toBeVisible();
+    expect(mocks.createWallet).toHaveBeenCalledOnce();
   });
 
   it("renders only real profile, collection, trade, and milestone values", async () => {

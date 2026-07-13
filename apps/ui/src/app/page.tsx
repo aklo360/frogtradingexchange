@@ -8,6 +8,7 @@ import { WalletButton } from "@/components/WalletButton";
 import { Ticker } from "@/components/Ticker";
 import { useAudio } from "@/providers/AudioProvider";
 import { isV1 } from "@/lib/version";
+import { usePrivy } from "@privy-io/react-auth";
 import { useWallet } from "@solana/wallet-adapter-react";
 import styles from "./page.module.css";
 
@@ -16,6 +17,7 @@ export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
   const { muted, toggleMuted } = useAudio();
   const { connected } = useWallet();
+  const { authenticated } = usePrivy();
 
   const toggleMenu = () => setMenuOpen((open) => !open);
   const closeMenu = () => setMenuOpen(false);
@@ -110,7 +112,7 @@ export default function Home() {
             <div className={styles.menuWalletWrapper} onClick={closeMenu}>
               <WalletButton className={styles.menuWallet} />
             </div>
-            {connected && !isV1 ? (
+            {(authenticated || connected) && !isV1 ? (
               <button
                 type="button"
                 className={styles.menuItem}
