@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { getPrivySolanaWallets, getTelegramAccount } from "./privy";
+import {
+  getPrivySolanaWallets,
+  getProfileNftWalletAddresses,
+  getTelegramAccount,
+} from "./privy";
 
 describe("Privy account helpers", () => {
   it("prioritizes an existing embedded Solana wallet", () => {
@@ -49,5 +53,29 @@ describe("Privy account helpers", () => {
       username: "frogtrader",
       firstName: "Frog",
     });
+  });
+
+  it("includes every Privy-linked Solana wallet in profile NFT holdings", () => {
+    expect(
+      getProfileNftWalletAddresses(
+        [
+          {
+            id: "current-wallet",
+            address: "Bru511111111111111111111111111111111111111",
+            embedded: true,
+          },
+          {
+            id: "recovered-wallet",
+            address: "9p9UcNW4QaAcw6pRAMFtaJHuNChL6dFFnbYzARTnJSWY",
+            embedded: false,
+          },
+        ],
+        "Connected111111111111111111111111111111111",
+      ),
+    ).toEqual([
+      "Bru511111111111111111111111111111111111111",
+      "9p9UcNW4QaAcw6pRAMFtaJHuNChL6dFFnbYzARTnJSWY",
+      "Connected111111111111111111111111111111111",
+    ]);
   });
 });

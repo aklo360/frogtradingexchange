@@ -103,6 +103,7 @@
 - Top 3 leaderboard rows highlight gold/silver/bronze (avatar halo + text glow).
 
 ### Fixed
+- Profile Business Frog holdings now query every Solana wallet linked to the signed-in Privy account plus the currently connected Solana wallet. Existing Privy wallets are no longer omitted when their linked-account metadata is not classified as embedded by the browser client.
 - The Pages API proxy now strips Cloudflare transport headers, retries one thrown upstream subrequest, and returns a bounded JSON `502` if both attempts fail. Profile error parsing rejects HTML documents, preventing intermittent Cloudflare `1101` pages from being dumped into the holdings UI.
 - Restored Privy accounts in the FTX web app using the same app ID and Telegram identity as Ribbot. The Profile page now supports Telegram-first recovery of existing embedded Solana wallets, explicit-only wallet creation for new web accounts, wallet inventory/copy/sign-out controls, and an account surface that remains available when optional Tapestry social data is down. No wallet is automatically created or replaced during login.
 - Restored Privy wallet readiness against the existing production configuration. The Worker now publishes the known public Privy app ID and accepts the deployed `FROGX_BOT_API_TOKEN` and `PRIVY_SIGNER_ID` aliases while retaining the canonical `RIBBOT_TRADING_BOT_TOKEN` and `PRIVY_AUTHORIZATION_KEY_ID` names. No Privy secret, wallet, signer, policy, or live-execution gate was changed.

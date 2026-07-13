@@ -6,7 +6,7 @@ The public UI exposes only `/` and `/profile`; unfinished `/perps`, `/leaderboar
 
 Profile uses Privy React with the same app ID as Ribbot, offers Telegram-first recovery, lists Solana wallets, and creates a wallet only after an explicit action when none exists. Privy secrets remain Worker-only. The target wallet `9p9UcNW4QaAcw6pRAMFtaJHuNChL6dFFnbYzARTnJSWY` was live on Solana on 2026-07-12; ownership recovery still requires the user's Privy Telegram login.
 
-Business Frog holdings are independent of Tapestry. `/api/frogx/nfts` aggregates every embedded Privy wallet shown in Profile; authenticated `/api/frogx/trading-bot/nfts` derives all embedded slots from the stored Telegram account. Both hard-filter collection `J7r...BkeMG` and verify current ownership. Profile holdings remain visible during social outages.
+Business Frog holdings are independent of Tapestry. The web Profile sends every Privy-linked Solana wallet plus the currently connected Solana wallet to `/api/frogx/nfts`; authenticated `/api/frogx/trading-bot/nfts` derives all embedded slots from the stored Telegram account. Both hard-filter collection `J7r...BkeMG` and verify current ownership. Profile holdings remain visible during social outages.
 
 Accounts persist up to ten embedded Privy Solana wallet slots plus an active ID; linked external wallets are excluded. Legacy fields project the active slot. Telegram selection is complete; additional wallet creation/import, disperse, bridge, and true multi-wallet Bundle Buy are not.
 

@@ -11,7 +11,11 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import { Ticker } from "@/components/Ticker";
 import { WalletButton } from "@/components/WalletButton";
 import type { NftHolding, NftHoldingsPage } from "@/lib/nfts";
-import { getPrivySolanaWallets, getTelegramAccount } from "@/lib/privy";
+import {
+  getPrivySolanaWallets,
+  getProfileNftWalletAddresses,
+  getTelegramAccount,
+} from "@/lib/privy";
 import { isV1 } from "@/lib/version";
 import type { AppProfileResponse } from "@/lib/tapestry/types";
 import { useAudio } from "@/providers/AudioProvider";
@@ -120,7 +124,7 @@ function NftHoldingsSection({
     <section className={styles.collectionSection} aria-label="NFT holdings">
       <div className={styles.sectionHeader}>
         <div>
-          <p className={styles.eyebrow}>Embedded wallets</p>
+          <p className={styles.eyebrow}>FTX account wallets</p>
           <h2>Solana Business Frogs</h2>
         </div>
         {totalPages > 1 ? (
@@ -227,7 +231,7 @@ function NftHoldingsSection({
           <img src="/sbficon.png" alt="" />
           <div>
             <h3>No Business Frogs found</h3>
-            <p>Your connected wallets do not currently hold any Solana Business Frogs.</p>
+            <p>Your linked wallets do not currently hold any Solana Business Frogs.</p>
           </div>
           <button
             type="button"
@@ -280,16 +284,10 @@ export default function ProfilePage() {
     [primaryPrivyWallet?.address, publicKey],
   );
   const nftWalletAddresses = useMemo(() => {
-    const embedded = privyWallets
-      .filter((wallet) => wallet.embedded)
-      .map((wallet) => wallet.address);
-    const connectedAddress = publicKey?.toBase58();
-    return [
-      ...new Set([
-        ...embedded,
-        ...(embedded.length === 0 && connectedAddress ? [connectedAddress] : []),
-      ]),
-    ];
+    return getProfileNftWalletAddresses(
+      privyWallets,
+      publicKey?.toBase58(),
+    );
   }, [privyWallets, publicKey]);
   const nftWalletKey = nftWalletAddresses.join(",");
   const hasAccount = authenticated || connected;

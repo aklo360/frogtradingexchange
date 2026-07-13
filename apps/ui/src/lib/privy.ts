@@ -45,6 +45,17 @@ export const getPrivySolanaWallets = (
   );
 };
 
+export const getProfileNftWalletAddresses = (
+  wallets: readonly PrivySolanaWallet[],
+  connectedAddress?: string | null,
+) =>
+  [
+    ...new Set([
+      ...wallets.map((wallet) => wallet.address),
+      ...(connectedAddress?.trim() ? [connectedAddress.trim()] : []),
+    ]),
+  ];
+
 export const getTelegramAccount = (
   linkedAccounts: readonly unknown[] | null | undefined,
 ) => {
