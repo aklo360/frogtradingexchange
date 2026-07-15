@@ -14,15 +14,15 @@ type BuybackStatus = {
   updatedAt: string;
 };
 
-const numberFormatter = new Intl.NumberFormat("en-US", {
+const solFormatter = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 0,
-  maximumFractionDigits: 3,
+  maximumFractionDigits: 2,
 });
 
 const formatSol = (value: number | null) =>
   value === null || !Number.isFinite(value)
-    ? "—"
-    : numberFormatter.format(value);
+    ? null
+    : solFormatter.format(value);
 
 const TOAST_DURATION_MS = 2000;
 const POP_DURATION_MS = 650;
@@ -30,7 +30,6 @@ const RESET_DELAY_MS = 5000;
 
 export const BuybackProgress = () => {
   const [status, setStatus] = useState<BuybackStatus | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [celebrate, setCelebrate] = useState(false);
   const [toastVisible, setToastVisible] = useState(false);
@@ -46,7 +45,6 @@ export const BuybackProgress = () => {
 
     const load = async () => {
       try {
-        setLoading(true);
         setError(null);
         const response = await fetch(buildApiUrl("/api/frogx/buyback"), {
           cache: "no-store",
@@ -62,10 +60,6 @@ export const BuybackProgress = () => {
       } catch (err) {
         if ((err as Error).name !== "AbortError" && !cancelled) {
           setError("Buyback feed offline");
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
         }
       }
     };
@@ -140,32 +134,18 @@ export const BuybackProgress = () => {
     }
   }, []);
 
-  const remainingSol = useMemo(() => {
-    if (!status) return null;
-    if (typeof status.remainingSol === "number") {
-      return status.remainingSol;
-    }
-    if (
-      typeof status.collectedSol === "number" &&
-      typeof status.floorSol === "number"
-    ) {
-      return Math.max(status.floorSol - status.collectedSol, 0);
-    }
-    return null;
-  }, [status]);
-
-  const displayProgress = useMemo(() => {
+  const percent = useMemo(() => {
     if (forceReset) return 0;
-    return rawProgress;
+    return Math.round(rawProgress * 100);
   }, [forceReset, rawProgress]);
 
-  const displayRemainingSol = useMemo(() => {
+  const solLabel = useMemo(() => {
     if (!status) return null;
-    if (forceReset && typeof status.floorSol === "number") {
-      return status.floorSol;
-    }
-    return remainingSol;
-  }, [forceReset, remainingSol, status]);
+    const collected = formatSol(forceReset ? 0 : status.collectedSol);
+    if (collected === null) return null;
+    const floor = formatSol(status.floorSol);
+    return floor === null ? `${collected} SOL` : `${collected} / ${floor} SOL`;
+  }, [forceReset, status]);
 
   return (
     <section
@@ -179,49 +159,32 @@ export const BuybackProgress = () => {
               <span key={`confetti-${index}`} className={styles.confettiPiece} />
             ))}
           </div>
-          <div className={styles.toastBubble}>
-            Burn ready! Frog incoming.
-          </div>
+          <div className={styles.toastBubble}>Burn ready! Frog incoming.</div>
         </div>
       ) : null}
-      <div className={styles.header}>
-        <div>
-          <p className={styles.eyebrow}>SBF BUYBACK + BURN</p>
-          <h2 className={styles.title}>Next frog burn tracker</h2>
-        </div>
-        <span className={styles.status}>
-          {loading ? "Loading..." : status?.enabled ? "Live" : "Offline"}
+      <div
+        className={styles.track}
+        role="progressbar"
+        aria-label="Progress to next frog burn"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={error ? undefined : percent}
+      >
+        <div
+          className={styles.fill}
+          style={{ width: `${error ? 0 : percent}%` }}
+        />
+        <span className={styles.percent}>
+          {error
+            ? "—"
+            : solLabel
+              ? `${solLabel} · ${percent}%`
+              : `${percent}%`}
         </span>
       </div>
-      {error ? (
-        <p className={styles.error}>{error}</p>
-      ) : (
-        <>
-          <div className={styles.metrics}>
-            <div>
-              <p className={styles.metricLabel}>Floor price</p>
-              <p className={styles.metricValue}>
-                {formatSol(status?.floorSol ?? null)}
-              </p>
-            </div>
-            <div>
-              <p className={styles.metricLabel}>SOL needed</p>
-              <p className={styles.metricValue}>
-                {formatSol(displayRemainingSol)}
-              </p>
-            </div>
-          </div>
-          <div className={styles.progressBar} role="img" aria-label="Buyback progress">
-            <div
-              className={styles.progressFill}
-              style={{ width: `${Math.round(displayProgress * 100)}%` }}
-            />
-          </div>
-          <p className={styles.progressLabel}>
-            {Math.round(displayProgress * 100)}% to next burn
-          </p>
-        </>
-      )}
+      <span className={styles.fire} aria-hidden="true">
+        🔥
+      </span>
     </section>
   );
 };

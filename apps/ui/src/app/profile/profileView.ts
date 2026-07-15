@@ -1,4 +1,4 @@
-import type { AppProfileResponse, TradeHistoryEntry } from "@/lib/tapestry/types";
+import type { TradeHistoryEntry } from "@/lib/tapestry/types";
 
 export const PROFILE_NFT_PAGE_SIZE = 8;
 
@@ -8,14 +8,6 @@ export type ProfileMilestone = {
   icon: string;
   earned: boolean;
   progress: string;
-};
-
-export type ProfileTimelineItem = {
-  id: string;
-  label: string;
-  detail: string;
-  timestamp: number;
-  successful: boolean;
 };
 
 export const deriveDefaultUsername = (address: string) =>
@@ -57,36 +49,74 @@ export const buildProfileMilestones = (input: {
   },
 ];
 
-const tokenLabel = (mint: string) =>
+export const shortMint = (mint: string) =>
   mint.length > 10 ? `${mint.slice(0, 4)}...${mint.slice(-4)}` : mint;
 
-const tradeLabel = (trade: TradeHistoryEntry) => {
-  if (trade.tradeType === "buy") return "Bought";
-  if (trade.tradeType === "sell") return "Sold";
-  return "Swapped";
+export type TradeTone = "buy" | "sell" | "swap";
+
+export const tradeChip = (
+  trade: Pick<TradeHistoryEntry, "tradeType">,
+): { label: string; tone: TradeTone } => {
+  if (trade.tradeType === "buy") return { label: "BUY", tone: "buy" };
+  if (trade.tradeType === "sell") return { label: "SELL", tone: "sell" };
+  return { label: "SWAP", tone: "swap" };
 };
 
-export const buildProfileTimeline = (
-  profile: AppProfileResponse,
-): ProfileTimelineItem[] => {
-  const trades = (profile.tradeHistory ?? []).map((trade) => ({
-    id: `trade-${trade.transactionSignature}`,
-    label: tradeLabel(trade),
-    detail: `${tokenLabel(trade.inputMint)} to ${tokenLabel(trade.outputMint)}`,
-    timestamp: normalizeEpochMilliseconds(trade.timestamp),
-    successful: true,
-  }));
+export const formatTokenAmount = (value: number) => {
+  if (!Number.isFinite(value)) return "0";
+  const magnitude = Math.abs(value);
+  if (magnitude >= 1_000_000_000)
+    return `${(value / 1_000_000_000).toFixed(2).replace(/\.?0+$/, "")}B`;
+  if (magnitude >= 1_000_000)
+    return `${(value / 1_000_000).toFixed(2).replace(/\.?0+$/, "")}M`;
+  if (magnitude >= 10_000)
+    return `${(value / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
+  if (magnitude >= 1) {
+    return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  }
+  if (magnitude === 0) return "0";
+  return value.toLocaleString("en-US", { maximumFractionDigits: 4 });
+};
 
-  const social = (profile.activity ?? []).map((activity, index) => ({
-    id: `social-${activity.type}-${activity.timestamp}-${index}`,
-    label: activity.type === "new_follower" ? "New follower" : "Social activity",
-    detail: activity.activity,
-    timestamp: normalizeEpochMilliseconds(activity.timestamp),
-    successful: true,
-  }));
+export const formatUsd = (value: number) => {
+  if (!Number.isFinite(value)) return null;
+  const magnitude = Math.abs(value);
+  if (magnitude > 0 && magnitude < 0.01) return "<$0.01";
+  return `${value < 0 ? "-" : ""}$${magnitude.toLocaleString("en-US", {
+    minimumFractionDigits: magnitude < 1000 ? 2 : 0,
+    maximumFractionDigits: magnitude < 1000 ? 2 : 0,
+  })}`;
+};
 
-  return [...trades, ...social]
-    .filter((item) => Number.isFinite(item.timestamp) && item.timestamp > 0)
-    .sort((a, b) => b.timestamp - a.timestamp)
-    .slice(0, 6);
+export const timeAgo = (timestamp: number, now = Date.now()) => {
+  const elapsed = now - timestamp;
+  if (!Number.isFinite(elapsed) || elapsed < 0) return "just now";
+  const minutes = Math.floor(elapsed / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+  }).format(new Date(timestamp));
+};
+
+export const activityLabel = (type: string) => {
+  switch (type) {
+    case "new_follower":
+      return "New follower";
+    case "following":
+      return "Followed";
+    case "like":
+      return "Like";
+    case "comment":
+      return "Comment";
+    case "new_content":
+      return "Post";
+    default:
+      return "Activity";
+  }
 };
