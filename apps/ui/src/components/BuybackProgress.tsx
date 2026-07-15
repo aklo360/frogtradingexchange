@@ -162,29 +162,31 @@ export const BuybackProgress = () => {
           <div className={styles.toastBubble}>Burn ready! Frog incoming.</div>
         </div>
       ) : null}
-      <div
-        className={styles.track}
-        role="progressbar"
-        aria-label="Progress to next frog burn"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={error ? undefined : percent}
-      >
+      <div className={styles.barRow}>
         <div
-          className={styles.fill}
-          style={{ width: `${error ? 0 : percent}%` }}
-        />
-        <span className={styles.percent}>
-          {error
-            ? "—"
-            : solLabel
-              ? `${solLabel} · ${percent}%`
-              : `${percent}%`}
+          className={styles.track}
+          role="progressbar"
+          aria-label="Progress to next frog burn"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={error ? undefined : percent}
+        >
+          <div
+            className={styles.fill}
+            style={{ width: `${error ? 0 : percent}%` }}
+          />
+        </div>
+        <span className={styles.fire} aria-hidden="true">
+          🔥
         </span>
       </div>
-      <span className={styles.fire} aria-hidden="true">
-        🔥
-      </span>
+      <p className={styles.label}>
+        {error
+          ? "—"
+          : solLabel
+            ? `${solLabel} · ${percent}%`
+            : `${percent}%`}
+      </p>
     </section>
   );
 };

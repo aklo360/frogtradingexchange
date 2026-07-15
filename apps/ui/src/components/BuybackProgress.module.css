@@ -3,8 +3,8 @@
   z-index: 4;
   width: min(820px, 100%);
   display: flex;
-  align-items: center;
-  gap: 0.55rem;
+  flex-direction: column;
+  gap: 0.45rem;
   color: #eafdf4;
   font-family: var(--font-press-start), var(--font-geist-sans), system-ui,
     sans-serif;
@@ -14,49 +14,41 @@
   animation: bubble-pop 650ms ease-out;
 }
 
+.barRow {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
 .track {
   position: relative;
   flex: 1;
-  height: 26px;
-  border-radius: 10px;
-  background: rgba(8, 2, 30, 0.78);
-  border: 2px solid rgba(20, 241, 149, 0.35);
-  box-shadow:
-    0 0 18px rgba(20, 241, 149, 0.2),
-    inset 0 0 12px rgba(153, 69, 255, 0.35);
+  height: 9px;
+  border-radius: 999px;
+  background: rgba(8, 12, 24, 0.75);
+  border: 1px solid rgba(20, 241, 149, 0.35);
   overflow: hidden;
 }
 
 .fill {
   height: 100%;
   width: 0%;
-  background: repeating-linear-gradient(
-      90deg,
-      rgba(255, 255, 255, 0.14) 0 6px,
-      transparent 6px 12px
-    ),
-    linear-gradient(90deg, #14f195, #00eaff);
-  box-shadow: 0 0 14px rgba(20, 241, 149, 0.6);
+  background: linear-gradient(90deg, #14f195, #00eaff);
+  box-shadow: 0 0 12px rgba(20, 241, 149, 0.6);
   transition: width 220ms ease;
 }
 
-.percent {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.52rem;
-  letter-spacing: 0.12em;
-  color: #eafdf4;
-  text-shadow:
-    0 0 8px rgba(5, 3, 21, 0.9),
-    1px 1px 0 rgba(5, 3, 21, 0.9);
-  pointer-events: none;
+.label {
+  margin: 0;
+  text-align: center;
+  font-size: 0.45rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(234, 253, 244, 0.7);
 }
 
 .fire {
-  font-size: 1.25rem;
+  font-size: 1rem;
   line-height: 1;
   filter: drop-shadow(0 0 10px rgba(255, 122, 60, 0.7));
 }
@@ -228,16 +220,12 @@
 }
 
 @media (max-width: 768px) {
-  .track {
-    height: 22px;
-  }
-
-  .percent {
-    font-size: 0.46rem;
+  .label {
+    font-size: 0.42rem;
   }
 
   .fire {
-    font-size: 1.05rem;
+    font-size: 0.9rem;
   }
 
   .toast {
