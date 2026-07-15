@@ -16,7 +16,7 @@ type BuybackStatus = {
 
 const solFormatter = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 0,
-  maximumFractionDigits: 2,
+  maximumFractionDigits: 3,
 });
 
 const formatSol = (value: number | null) =>
