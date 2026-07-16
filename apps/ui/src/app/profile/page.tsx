@@ -17,33 +17,25 @@ import {
   getTelegramAccount,
 } from "@/lib/privy";
 import { isV1 } from "@/lib/version";
-import type { AppProfileResponse } from "@/lib/tapestry/types";
 import { useAudio } from "@/providers/AudioProvider";
 import homeStyles from "../page.module.css";
 import styles from "./profile.module.css";
 import {
   PROFILE_NFT_PAGE_SIZE,
-  activityLabel,
   buildProfileMilestones,
   deriveDefaultUsername,
   formatShortAddress,
-  formatTokenAmount,
-  formatUsd,
-  normalizeEpochMilliseconds,
-  shortMint,
-  timeAgo,
-  tradeChip,
+  loadStoredPfp,
+  storePfp,
+  type StoredPfp,
 } from "./profileView";
 import {
   demoNftPage,
   demoPrivyWallets,
-  demoProfileResponse,
   demoTelegramAccount,
 } from "./demoFixtures";
 
 type FetchState = "idle" | "loading" | "error";
-
-const profileCache = new Map<string, AppProfileResponse>();
 
 const readResponseError = async (response: Response, fallback: string) => {
   const text = await response.text();
@@ -66,16 +58,6 @@ const readResponseError = async (response: Response, fallback: string) => {
 
 const initialsFor = (value: string) =>
   value.trim().slice(0, 2).toUpperCase() || "??";
-
-const formatProfileDate = (value?: number) => {
-  if (!value) return "Unknown";
-  const timestamp = normalizeEpochMilliseconds(value);
-  if (!Number.isFinite(timestamp)) return "Unknown";
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    year: "numeric",
-  }).format(new Date(timestamp));
-};
 
 const extractNftNumber = (name: string, collection?: string | null) => {
   const fromName = name.match(/(\d+)/g);
@@ -107,7 +89,6 @@ type NftHoldingsSectionProps = {
   state: FetchState;
   error: string | null;
   pfpMint: string | null;
-  pfpSaving: boolean;
   onPageChange: (page: number) => void;
   onRefresh: () => void;
   profileWalletAddress?: string;
@@ -122,7 +103,6 @@ function NftHoldingsSection({
   state,
   error,
   pfpMint,
-  pfpSaving,
   onPageChange,
   onRefresh,
   profileWalletAddress,
@@ -200,7 +180,7 @@ function NftHoldingsSection({
                     <button
                       type="button"
                       onClick={() => onSelectPfp?.(nft.mint, nft.image)}
-                      disabled={isCurrent || pfpSaving}
+                      disabled={isCurrent}
                     >
                       {isCurrent ? "Current profile" : "Set as profile"}
                     </button>
@@ -315,24 +295,16 @@ export default function ProfilePage() {
   const nftWalletKey = nftWalletAddresses.join(",");
   const hasAccount = authenticated || connected || demoMode;
 
-  const [profileData, setProfileData] = useState<AppProfileResponse | null>(
-    null,
-  );
-  const [fetchState, setFetchState] = useState<FetchState>("idle");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [nftData, setNftData] = useState<NftHoldingsPage | null>(null);
   const [nftFetchState, setNftFetchState] = useState<FetchState>("idle");
   const [nftError, setNftError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [nftPage, setNftPage] = useState(1);
   const [selectingPfp, setSelectingPfp] = useState(false);
-  const [pfpSaving, setPfpSaving] = useState(false);
-  const [profileSaving, setProfileSaving] = useState(false);
+  const [pfp, setPfp] = useState<StoredPfp | null>(null);
   const [walletCreating, setWalletCreating] = useState(false);
   const [walletError, setWalletError] = useState<string | null>(null);
   const [copiedAddress, setCopiedAddress] = useState<string | null>(null);
-  const [pfpError, setPfpError] = useState<string | null>(null);
-  const [requestVersion, setRequestVersion] = useState(0);
   const [nftRequestVersion, setNftRequestVersion] = useState(0);
 
   const closeMenu = () => setMenuOpen(false);
@@ -358,72 +330,13 @@ export default function ProfilePage() {
   }, [nftWalletKey, walletAddress]);
 
   useEffect(() => {
-    if (demoMode) {
-      setProfileData(demoProfileResponse(Date.now()));
-      setFetchState("idle");
-      setErrorMessage(null);
-      return;
-    }
-    if (!walletAddress) {
-      setProfileData(null);
-      setFetchState("idle");
-      setErrorMessage(null);
-      return;
-    }
-
-    const cached = profileCache.get(walletAddress);
-    if (cached) setProfileData(cached);
-
-    const controller = new AbortController();
-    let canceled = false;
-
-    const loadProfile = async () => {
-      setFetchState("loading");
-      setErrorMessage(null);
-
-      try {
-        const query = new URLSearchParams({
-          walletAddress,
-          nftCollection: "all",
-          nftMode: "all",
-        });
-
-        const response = await fetch(
-          `/api/tapestry/profiles?${query.toString()}`,
-          { cache: "no-store", signal: controller.signal },
-        );
-
-        if (response.status === 404) {
-          if (canceled) return;
-          profileCache.delete(walletAddress);
-          setProfileData(null);
-          setFetchState("idle");
-          return;
-        }
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(errorText || "Failed to load profile");
-        }
-
-        const data = (await response.json()) as AppProfileResponse;
-        if (canceled) return;
-        profileCache.set(walletAddress, data);
-        setProfileData(data);
-        setFetchState("idle");
-      } catch (error) {
-        if (controller.signal.aborted || canceled) return;
-        console.error("Error loading Tapestry profile", error);
-        setFetchState("error");
-        setErrorMessage("Your profile could not be synced right now.");
-      }
-    };
-
-    void loadProfile();
-    return () => {
-      canceled = true;
-      controller.abort();
-    };
-  }, [demoMode, requestVersion, walletAddress]);
+    setPfp(
+      loadStoredPfp(
+        walletAddress,
+        typeof window === "undefined" ? null : window.localStorage,
+      ),
+    );
+  }, [walletAddress]);
 
   useEffect(() => {
     if (demoMode) {
@@ -499,7 +412,6 @@ export default function ProfilePage() {
     };
   }, [demoMode, nftPage, nftRequestVersion, nftWalletKey]);
 
-  const refreshProfile = () => setRequestVersion((version) => version + 1);
   const refreshNfts = () => setNftRequestVersion((version) => version + 1);
 
   const handleCreateWallet = async () => {
@@ -535,100 +447,27 @@ export default function ProfilePage() {
     if (connected) await disconnect();
   };
 
-  const handleCreateProfile = async () => {
+  const handleSelectPfp = (mint: string, image: string | null) => {
     if (!walletAddress) return;
-    setProfileSaving(true);
-    setErrorMessage(null);
-    try {
-      const response = await fetch("/api/tapestry/profiles", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: deriveDefaultUsername(walletAddress),
-          walletAddress,
-          bio: null,
-        }),
-      });
-      if (!response.ok) {
-        throw new Error(
-          await readResponseError(response, "Profile creation failed"),
-        );
-      }
-      const data = (await response.json()) as AppProfileResponse;
-      profileCache.set(walletAddress, data);
-      setProfileData(data);
-      setFetchState("idle");
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Profile creation failed.",
-      );
-    } finally {
-      setProfileSaving(false);
-    }
+    const next: StoredPfp = { mint, image };
+    setPfp(next);
+    storePfp(
+      walletAddress,
+      typeof window === "undefined" ? null : window.localStorage,
+      next,
+    );
+    setSelectingPfp(false);
   };
 
-  const handleSelectPfp = async (mint: string, image: string | null) => {
-    const profile = profileData?.profile;
-    if (!walletAddress || !profile) return;
-    setPfpSaving(true);
-    setPfpError(null);
-    try {
-      const response = await fetch("/api/tapestry/profiles", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: profile.username,
-          walletAddress,
-          profileId: profile.id,
-          bio: profile.bio ?? null,
-          pfpMint: mint,
-          pfpImage: image,
-        }),
-      });
-      if (!response.ok) {
-        throw new Error(
-          await readResponseError(
-            response,
-            `Failed with status ${response.status}`,
-          ),
-        );
-      }
-      const data = (await response.json()) as AppProfileResponse;
-      profileCache.set(walletAddress, data);
-      setProfileData(data);
-      setSelectingPfp(false);
-    } catch (error) {
-      setPfpError(error instanceof Error ? error.message : "Failed to set PFP");
-    } finally {
-      setPfpSaving(false);
-    }
-  };
-
-  const followerTotal =
-    profileData?.followers?.total ?? profileData?.socialCounts.followers ?? 0;
-  const followingTotal =
-    profileData?.following?.total ?? profileData?.socialCounts.following ?? 0;
-  const profileRecord = profileData?.profile;
   const allNfts = nftData?.items ?? [];
   const totalNfts = Math.max(nftData?.total ?? 0, allNfts.length);
-  const tradeHistory = profileData?.tradeHistory ?? [];
-  const recentTradeCount = tradeHistory.length;
-  const activityFeed = profileData?.activity ?? [];
-  const tokenSummary = profileData?.tokenSummary ?? [];
-  const followerProfiles = profileData?.followers?.profiles ?? [];
-  const followingProfiles = profileData?.following?.profiles ?? [];
-  const pfpMint = profileData?.pfpMint ?? null;
-  const avatarUrl =
-    profileData?.pfpImage ?? profileRecord?.image ?? "/sbficon.png";
-  const displayUsername =
-    profileRecord?.username ??
-    (walletAddress ? deriveDefaultUsername(walletAddress) : "Frog profile");
-  const displayBio = profileRecord?.bio?.trim() || "No bio added yet.";
-  const milestones = buildProfileMilestones({
-    frogCount: totalNfts,
-    followerCount: followerTotal,
-    recentTradeCount,
-  });
+  const pfpMint = pfp?.mint ?? null;
+  const avatarUrl = pfp?.image ?? "/sbficon.png";
+  const displayUsername = walletAddress
+    ? deriveDefaultUsername(walletAddress)
+    : "Frog profile";
+  const milestones = buildProfileMilestones({ frogCount: totalNfts });
+  const earnedBadges = milestones.filter((milestone) => milestone.earned);
 
   const nftTotalPages = Math.max(
     1,
@@ -643,94 +482,90 @@ export default function ProfilePage() {
       state={nftFetchState}
       error={nftError}
       pfpMint={pfpMint}
-      pfpSaving={pfpSaving}
       onPageChange={setNftPage}
       onRefresh={refreshNfts}
       profileWalletAddress={walletAddress}
-      onSelectPfp={
-        profileData
-          ? (mint, image) => void handleSelectPfp(mint, image)
-          : undefined
-      }
+      onSelectPfp={handleSelectPfp}
     />
   ) : null;
 
-  const accountConsole = authenticated || demoMode ? (
-    <section className={styles.accountBand} aria-label="Privy account">
-      <div>
-        <p className={styles.eyebrowPurple}>Wallet console</p>
-        <div className={styles.accountHeading}>
-          <h2>
-            {telegramAccount?.username
-              ? `@${telegramAccount.username}`
-              : telegramAccount?.firstName ?? "Privy account"}
-          </h2>
-          <span className={styles.privyStatus}>Privy secured</span>
+  const accountConsole =
+    authenticated || demoMode ? (
+      <section className={styles.accountBand} aria-label="Privy account">
+        <div>
+          <p className={styles.eyebrowPurple}>Wallet console</p>
+          <div className={styles.accountHeading}>
+            <h2>
+              {telegramAccount?.username
+                ? `@${telegramAccount.username}`
+                : telegramAccount?.firstName ?? "Privy account"}
+            </h2>
+            <span className={styles.privyStatus}>Privy secured</span>
+          </div>
         </div>
-      </div>
 
-      <div className={styles.walletInventory}>
-        {privyWallets.length ? (
-          privyWallets.map((wallet, index) => (
-            <div className={styles.walletRow} key={wallet.address}>
+        <div className={styles.walletInventory}>
+          {privyWallets.length ? (
+            privyWallets.map((wallet, index) => (
+              <div className={styles.walletRow} key={wallet.address}>
+                <div>
+                  <span>
+                    {wallet.embedded ? "Embedded wallet" : "Linked wallet"}
+                    {index === 0 ? " · Active" : ""}
+                  </span>
+                  <strong title={wallet.address}>{wallet.address}</strong>
+                </div>
+                <button
+                  type="button"
+                  className={styles.ghostButton}
+                  onClick={() => void handleCopyWallet(wallet.address)}
+                >
+                  {copiedAddress === wallet.address ? "Copied" : "Copy"}
+                </button>
+              </div>
+            ))
+          ) : (
+            <div className={styles.walletEmpty}>
               <div>
+                <strong>No Solana wallet is linked yet.</strong>
                 <span>
-                  {wallet.embedded ? "Embedded wallet" : "Linked wallet"}
-                  {index === 0 ? " · Active" : ""}
+                  Create one only if this is a new account. To recover a bot
+                  wallet, sign out and use the same Telegram account first.
                 </span>
-                <strong title={wallet.address}>{wallet.address}</strong>
               </div>
               <button
                 type="button"
-                className={styles.ghostButton}
-                onClick={() => void handleCopyWallet(wallet.address)}
+                className={styles.primaryButton}
+                onClick={() => void handleCreateWallet()}
+                disabled={walletCreating}
               >
-                {copiedAddress === wallet.address ? "Copied" : "Copy"}
+                {walletCreating ? "Creating wallet" : "Create Solana wallet"}
               </button>
             </div>
-          ))
-        ) : (
-          <div className={styles.walletEmpty}>
-            <div>
-              <strong>No Solana wallet is linked yet.</strong>
-              <span>
-                Create one only if this is a new account. To recover a bot
-                wallet, sign out and use the same Telegram account first.
-              </span>
-            </div>
-            <button
-              type="button"
-              className={styles.primaryButton}
-              onClick={() => void handleCreateWallet()}
-              disabled={walletCreating}
-            >
-              {walletCreating ? "Creating wallet" : "Create Solana wallet"}
-            </button>
-          </div>
-        )}
-      </div>
-
-      <div className={styles.accountFooter}>
-        <span>
-          {telegramAccount
-            ? "Telegram and web use this same Privy identity."
-            : "Link or sign in with Telegram to use this account in the bot."}
-        </span>
-        <button
-          type="button"
-          className={styles.accountSignOut}
-          onClick={() => void handleSignOut()}
-        >
-          Sign out
-        </button>
-      </div>
-      {walletError ? (
-        <div className={styles.inlineError} role="alert">
-          <span>{walletError}</span>
+          )}
         </div>
-      ) : null}
-    </section>
-  ) : null;
+
+        <div className={styles.accountFooter}>
+          <span>
+            {telegramAccount
+              ? "Telegram and web use this same Privy identity."
+              : "Link or sign in with Telegram to use this account in the bot."}
+          </span>
+          <button
+            type="button"
+            className={styles.accountSignOut}
+            onClick={() => void handleSignOut()}
+          >
+            Sign out
+          </button>
+        </div>
+        {walletError ? (
+          <div className={styles.inlineError} role="alert">
+            <span>{walletError}</span>
+          </div>
+        ) : null}
+      </section>
+    ) : null;
 
   if (isV1) return null;
 
@@ -887,80 +722,6 @@ export default function ProfilePage() {
               </div>
             </section>
           </>
-        ) : fetchState === "loading" && !profileData ? (
-          <>
-            {accountConsole}
-            <section className={styles.loadingState} aria-live="polite">
-              <div className={`${styles.skeleton} ${styles.skeletonAvatar}`} />
-              <div className={styles.loadingLines}>
-                <div className={`${styles.skeleton} ${styles.skeletonLabel}`} />
-                <div className={`${styles.skeleton} ${styles.skeletonTitle}`} />
-                <div className={`${styles.skeleton} ${styles.skeletonBody}`} />
-              </div>
-              <span>Syncing wallet profile</span>
-            </section>
-            {nftHoldingsSection}
-          </>
-        ) : fetchState === "error" && !profileData ? (
-          <>
-            <section className={styles.emptyProfileState}>
-              <video
-                src="/sticker/cry.webm"
-                className={styles.emptyMascot}
-                autoPlay
-                loop
-                muted
-                playsInline
-                aria-hidden="true"
-              />
-              <div>
-                <p className={styles.eyebrow}>Social profile sync paused</p>
-                <h1>Your wallet is connected.</h1>
-                <p>
-                  Your Privy account and wallet remain available. Frog profile
-                  data could not be synced from Tapestry right now.
-                </p>
-                <button
-                  type="button"
-                  className={styles.primaryButton}
-                  onClick={refreshProfile}
-                >
-                  Retry social sync
-                </button>
-              </div>
-            </section>
-            {nftHoldingsSection}
-            {accountConsole}
-          </>
-        ) : !profileData ? (
-          <>
-            <section className={styles.emptyProfileState}>
-              <img src="/sbficon.png" alt="" className={styles.emptyMascot} />
-              <div>
-                <p className={styles.eyebrow}>Wallet connected</p>
-                <h1>Create your Frog profile.</h1>
-                <p>
-                  Start with a wallet-derived handle. Your owned NFTs can
-                  become the profile picture after creation.
-                </p>
-                <button
-                  type="button"
-                  className={styles.primaryButton}
-                  onClick={() => void handleCreateProfile()}
-                  disabled={profileSaving}
-                >
-                  {profileSaving ? "Creating profile" : "Create profile"}
-                </button>
-                {errorMessage ? (
-                  <div className={styles.inlineError} role="alert">
-                    <span>{errorMessage}</span>
-                  </div>
-                ) : null}
-              </div>
-            </section>
-            {nftHoldingsSection}
-            {accountConsole}
-          </>
         ) : (
           <>
             <section className={styles.hero} aria-label="Player card">
@@ -971,7 +732,9 @@ export default function ProfilePage() {
                 disabled={!allNfts.length}
                 aria-label="Choose a profile frog"
                 title={
-                  allNfts.length ? "Choose a profile frog" : "No frogs available"
+                  allNfts.length
+                    ? "Choose a profile frog"
+                    : "No frogs available"
                 }
               >
                 <img
@@ -986,13 +749,7 @@ export default function ProfilePage() {
                 <p className={styles.eyebrow}>Player profile</p>
                 <div className={styles.identityTopRow}>
                   <h1 className={styles.username}>{displayUsername}</h1>
-                  {fetchState === "loading" ? (
-                    <span className={styles.syncStatusBusy}>Syncing</span>
-                  ) : (
-                    <span className={styles.syncStatus}>Synced</span>
-                  )}
                 </div>
-                <p className={styles.bio}>{displayBio}</p>
                 <div className={styles.chipRow}>
                   <button
                     type="button"
@@ -1005,10 +762,6 @@ export default function ProfilePage() {
                       ? "Copied!"
                       : formatShortAddress(walletAddress)}
                   </button>
-                  <span className={styles.chip}>
-                    <span className={styles.chipLabel}>Joined</span>
-                    {formatProfileDate(profileRecord?.createdAt)}
-                  </span>
                   {telegramAccount?.username ? (
                     <span className={styles.chip}>
                       <span className={styles.chipLabel}>TG</span>@
@@ -1049,289 +802,26 @@ export default function ProfilePage() {
               </div>
               <div className={styles.hudTile}>
                 <dt>
-                  <img src="/chat.svg" alt="" />
-                  Followers
+                  <img src="/wallet.svg" alt="" />
+                  Wallets
                 </dt>
-                <dd>{followerTotal.toLocaleString()}</dd>
+                <dd>{nftWalletAddresses.length.toLocaleString()}</dd>
               </div>
               <div className={styles.hudTile}>
                 <dt>
-                  <img src="/sparkle.svg" alt="" />
-                  Following
+                  <img src="/trophy.svg" alt="" />
+                  Badges
                 </dt>
-                <dd>{followingTotal.toLocaleString()}</dd>
-              </div>
-              <div className={styles.hudTile}>
-                <dt>
-                  <img src="/swap.svg" alt="" />
-                  Recent trades
-                </dt>
-                <dd>{recentTradeCount.toLocaleString()}</dd>
+                <dd>
+                  {earnedBadges.length}/{milestones.length}
+                </dd>
               </div>
             </dl>
 
-            {errorMessage ? (
-              <div className={styles.inlineError} role="status">
-                <span>{errorMessage}</span>
-                <button type="button" onClick={refreshProfile}>
-                  Retry
-                </button>
-              </div>
-            ) : null}
-
             <div className={styles.workspace}>
-              <div className={styles.mainColumn}>
-                {nftHoldingsSection}
-
-                <section className={styles.tradeSection} aria-label="Trade log">
-                  <div className={styles.sectionHeader}>
-                    <div>
-                      <p className={styles.eyebrow}>Quest log</p>
-                      <h2>Trade log</h2>
-                    </div>
-                    <span className={styles.sectionCount}>
-                      {recentTradeCount
-                        ? `${recentTradeCount} logged`
-                        : "0 logged"}
-                    </span>
-                  </div>
-                  {tradeHistory.length ? (
-                    <ol className={styles.tradeList}>
-                      {tradeHistory.slice(0, 8).map((trade) => {
-                        const chip = tradeChip(trade);
-                        const rowClass =
-                          chip.tone === "buy"
-                            ? styles.tradeRowBuy
-                            : chip.tone === "sell"
-                              ? styles.tradeRowSell
-                              : styles.tradeRowSwap;
-                        const chipClass =
-                          chip.tone === "buy"
-                            ? styles.tradeChipBuy
-                            : chip.tone === "sell"
-                              ? styles.tradeChipSell
-                              : styles.tradeChipSwap;
-                        const timestamp = normalizeEpochMilliseconds(
-                          trade.timestamp,
-                        );
-                        const usd =
-                          trade.outputValueUSD ?? trade.inputValueUSD ?? null;
-                        const usdLabel =
-                          usd !== null ? formatUsd(usd) : null;
-                        return (
-                          <li
-                            key={`${trade.transactionSignature}-${trade.id}`}
-                            className={rowClass}
-                          >
-                            <span className={chipClass}>{chip.label}</span>
-                            <div className={styles.tradeDetail}>
-                              <span className={styles.tradePair}>
-                                {shortMint(trade.inputMint)} →{" "}
-                                {shortMint(trade.outputMint)}
-                              </span>
-                              <span className={styles.tradeAmounts}>
-                                {formatTokenAmount(trade.inputAmount)} →{" "}
-                                {formatTokenAmount(trade.outputAmount)}
-                              </span>
-                            </div>
-                            <div className={styles.tradeSide}>
-                              {usdLabel ? (
-                                <span className={styles.tradeUsd}>
-                                  {usdLabel}
-                                </span>
-                              ) : null}
-                              <time
-                                className={styles.tradeTime}
-                                dateTime={new Date(timestamp).toISOString()}
-                              >
-                                {timeAgo(timestamp)}
-                              </time>
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ol>
-                  ) : (
-                    <p className={styles.logEmpty}>
-                      No trades recorded yet. Hit the swap terminal to start
-                      your quest log.
-                    </p>
-                  )}
-                </section>
-              </div>
+              <div className={styles.mainColumn}>{nftHoldingsSection}</div>
 
               <aside className={styles.sideRail}>
-                {tokenSummary.length ? (
-                  <section
-                    className={styles.railSection}
-                    aria-label="Token summary"
-                  >
-                    <div className={styles.railHeading}>
-                      <h2>Token bag</h2>
-                    </div>
-                    <ul className={styles.tokenList}>
-                      {tokenSummary.slice(0, 6).map((token) => {
-                        const valueClass =
-                          token.direction === "positive"
-                            ? styles.tokenValuePositive
-                            : token.direction === "negative"
-                              ? styles.tokenValueNegative
-                              : styles.tokenValueNeutral;
-                        const usdLabel = formatUsd(token.netUsd);
-                        return (
-                          <li key={token.mint} className={styles.tokenRow}>
-                            <span className={styles.tokenLogo}>
-                              {token.logoURI ? (
-                                <img
-                                  src={token.logoURI}
-                                  alt=""
-                                  referrerPolicy="no-referrer"
-                                />
-                              ) : (
-                                initialsFor(token.symbol ?? token.mint)
-                              )}
-                            </span>
-                            <span className={styles.tokenName}>
-                              <strong>
-                                {token.symbol ?? shortMint(token.mint)}
-                              </strong>
-                              <span>
-                                {formatTokenAmount(token.netAmount)} net
-                              </span>
-                            </span>
-                            <span className={valueClass}>
-                              {token.direction === "positive"
-                                ? "▲ "
-                                : token.direction === "negative"
-                                  ? "▼ "
-                                  : ""}
-                              {usdLabel ?? "—"}
-                            </span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </section>
-                ) : null}
-
-                <section className={styles.railSection} aria-label="Party">
-                  <div className={styles.railHeading}>
-                    <h2>Party</h2>
-                  </div>
-                  <div className={styles.partyGroup}>
-                    <span className={styles.partyLabel}>
-                      Latest followers <b>{followerTotal.toLocaleString()}</b>
-                    </span>
-                    {followerProfiles.length ? (
-                      <div className={styles.partyStrip}>
-                        {followerProfiles.slice(0, 8).map((member) => (
-                          <span
-                            key={member.id}
-                            className={styles.partyAvatar}
-                            title={member.username}
-                          >
-                            {member.image ? (
-                              <img
-                                src={member.image}
-                                alt={member.username}
-                                referrerPolicy="no-referrer"
-                              />
-                            ) : (
-                              initialsFor(member.username)
-                            )}
-                          </span>
-                        ))}
-                        {followerTotal > 8 ? (
-                          <span className={styles.partyMore}>
-                            +{Math.min(followerTotal - 8, 99)}
-                          </span>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <p className={styles.logEmpty}>No followers yet.</p>
-                    )}
-                  </div>
-                  <div className={styles.partyGroup}>
-                    <span className={styles.partyLabel}>
-                      Recently followed <b>{followingTotal.toLocaleString()}</b>
-                    </span>
-                    {followingProfiles.length ? (
-                      <div className={styles.partyStrip}>
-                        {followingProfiles.slice(0, 8).map((member) => (
-                          <span
-                            key={member.id}
-                            className={styles.partyAvatar}
-                            title={member.username}
-                          >
-                            {member.image ? (
-                              <img
-                                src={member.image}
-                                alt={member.username}
-                                referrerPolicy="no-referrer"
-                              />
-                            ) : (
-                              initialsFor(member.username)
-                            )}
-                          </span>
-                        ))}
-                        {followingTotal > 8 ? (
-                          <span className={styles.partyMore}>
-                            +{Math.min(followingTotal - 8, 99)}
-                          </span>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <p className={styles.logEmpty}>
-                        Not following anyone yet.
-                      </p>
-                    )}
-                  </div>
-                </section>
-
-                <section className={styles.railSection} aria-label="Activity">
-                  <div className={styles.railHeading}>
-                    <h2>Guild log</h2>
-                    <button
-                      type="button"
-                      className={styles.ghostButton}
-                      onClick={refreshProfile}
-                      title="Refresh profile"
-                    >
-                      Refresh
-                    </button>
-                  </div>
-                  {activityFeed.length ? (
-                    <ol className={styles.guildList}>
-                      {activityFeed.slice(0, 6).map((item, index) => {
-                        const timestamp = normalizeEpochMilliseconds(
-                          item.timestamp,
-                        );
-                        return (
-                          <li key={`${item.type}-${item.timestamp}-${index}`}>
-                            <span
-                              className={styles.guildDot}
-                              aria-hidden="true"
-                            />
-                            <div className={styles.guildBody}>
-                              <strong>{activityLabel(item.type)}</strong>
-                              <p>{item.activity}</p>
-                            </div>
-                            <time
-                              dateTime={new Date(timestamp).toISOString()}
-                            >
-                              {timeAgo(timestamp)}
-                            </time>
-                          </li>
-                        );
-                      })}
-                    </ol>
-                  ) : (
-                    <p className={styles.logEmpty}>
-                      No recent social activity.
-                    </p>
-                  )}
-                </section>
-
                 <section
                   className={styles.railSection}
                   aria-label="Achievements"
@@ -1394,7 +884,6 @@ export default function ProfilePage() {
                 &times;
               </button>
             </div>
-            {pfpError ? <p className={styles.dialogError}>{pfpError}</p> : null}
             <div className={styles.pfpGrid}>
               {allNfts.map((nft) => {
                 const label = nftLabel(nft);
@@ -1406,12 +895,15 @@ export default function ProfilePage() {
                     className={
                       isCurrent ? styles.pfpChoiceActive : styles.pfpChoice
                     }
-                    onClick={() => void handleSelectPfp(nft.mint, nft.image)}
-                    disabled={pfpSaving}
+                    onClick={() => handleSelectPfp(nft.mint, nft.image)}
                   >
                     <span className={styles.pfpImage}>
                       {nft.image ? (
-                        <img src={nft.image} alt="" referrerPolicy="no-referrer" />
+                        <img
+                          src={nft.image}
+                          alt=""
+                          referrerPolicy="no-referrer"
+                        />
                       ) : (
                         initialsFor(label)
                       )}

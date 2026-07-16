@@ -1,7 +1,4 @@
 const DEFAULT_API_ORIGIN = "https://frogx-api.aklo.workers.dev";
-const isPagesApiRoute = (pathname) =>
-  pathname === "/api/tapestry" || pathname.startsWith("/api/tapestry/");
-
 const methodHasBody = (method) => {
   const upper = method.toUpperCase();
   return upper !== "GET" && upper !== "HEAD";
@@ -63,7 +60,7 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    if (url.pathname.startsWith("/api/") && !isPagesApiRoute(url.pathname)) {
+    if (url.pathname.startsWith("/api/")) {
       const apiOrigin = env.API_ORIGIN ?? DEFAULT_API_ORIGIN;
       const target = new URL(apiOrigin);
       target.pathname = url.pathname;

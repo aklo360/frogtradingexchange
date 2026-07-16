@@ -1,17 +1,22 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  activityLabel,
   buildProfileMilestones,
   deriveDefaultUsername,
   formatShortAddress,
-  formatTokenAmount,
-  formatUsd,
-  normalizeEpochMilliseconds,
-  shortMint,
-  timeAgo,
-  tradeChip,
+  loadStoredPfp,
+  storePfp,
 } from "./profileView";
+
+const memoryStorage = () => {
+  const store = new Map<string, string>();
+  return {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      store.set(key, value);
+    },
+  };
+};
 
 describe("profile view model", () => {
   it("derives stable wallet labels without inventing profile metrics", () => {
@@ -19,66 +24,51 @@ describe("profile view model", () => {
 
     expect(deriveDefaultUsername(address)).toBe("frog-so1112");
     expect(formatShortAddress(address)).toBe("So11...1112");
-    expect(shortMint(address)).toBe("So11...1112");
-    expect(normalizeEpochMilliseconds(1_700_000_000)).toBe(1_700_000_000_000);
   });
 
-  it("earns milestones only from their documented thresholds", () => {
-    const milestones = buildProfileMilestones({
-      frogCount: 4,
-      followerCount: 10,
-      recentTradeCount: 1,
-    });
+  it("earns badges only from verified frog holdings", () => {
+    const none = buildProfileMilestones({ frogCount: 0 });
+    expect(none.every((milestone) => !milestone.earned)).toBe(true);
 
-    expect(milestones.map(({ id, earned }) => ({ id, earned }))).toEqual([
+    const four = buildProfileMilestones({ frogCount: 4 });
+    expect(four.map(({ id, earned }) => ({ id, earned }))).toEqual([
       { id: "hotshot", earned: true },
       { id: "samurai", earned: false },
-      { id: "trailblazer", earned: true },
+      { id: "trailblazer", earned: false },
     ]);
+
+    const whale = buildProfileMilestones({ frogCount: 15 });
+    expect(whale.every((milestone) => milestone.earned)).toBe(true);
   });
 
-  it("maps trade types to deterministic chips", () => {
-    expect(tradeChip({ tradeType: "buy" })).toEqual({
-      label: "BUY",
-      tone: "buy",
+  it("round-trips the stored profile frog per wallet", () => {
+    const storage = memoryStorage();
+    const wallet = "9p9UcNW4QaAcw6pRAMFtaJHuNChL6dFFnbYzARTnJSWY";
+
+    expect(loadStoredPfp(wallet, storage)).toBeNull();
+
+    storePfp(wallet, storage, { mint: "frog-mint-42", image: "/frog.png" });
+    expect(loadStoredPfp(wallet, storage)).toEqual({
+      mint: "frog-mint-42",
+      image: "/frog.png",
     });
-    expect(tradeChip({ tradeType: "sell" })).toEqual({
-      label: "SELL",
-      tone: "sell",
-    });
-    expect(tradeChip({ tradeType: "swap" })).toEqual({
-      label: "SWAP",
-      tone: "swap",
-    });
+
+    expect(loadStoredPfp("OtherWallet1111111111111111111111", storage)).toBeNull();
   });
 
-  it("formats token amounts compactly without fabricating precision", () => {
-    expect(formatTokenAmount(12_400_000)).toBe("12.4M");
-    expect(formatTokenAmount(184_000)).toBe("184K");
-    expect(formatTokenAmount(2.5)).toBe("2.5");
-    expect(formatTokenAmount(0.1234567)).toBe("0.1235");
-    expect(formatTokenAmount(0)).toBe("0");
-  });
+  it("ignores malformed stored profile frogs", () => {
+    const storage = memoryStorage();
+    const wallet = "Vote111111111111111111111111111111111111111";
 
-  it("formats USD values with honest sub-cent handling", () => {
-    expect(formatUsd(412.5)).toBe("$412.50");
-    expect(formatUsd(-137.5)).toBe("-$137.50");
-    expect(formatUsd(0.004)).toBe("<$0.01");
-    expect(formatUsd(3_034)).toBe("$3,034");
-  });
+    storage.setItem(`ftx-profile-pfp:${wallet}`, "not-json");
+    expect(loadStoredPfp(wallet, storage)).toBeNull();
 
-  it("reports relative time from a fixed clock", () => {
-    const now = 1_700_000_000_000;
+    storage.setItem(`ftx-profile-pfp:${wallet}`, JSON.stringify({ image: 5 }));
+    expect(loadStoredPfp(wallet, storage)).toBeNull();
 
-    expect(timeAgo(now - 30_000, now)).toBe("just now");
-    expect(timeAgo(now - 5 * 60_000, now)).toBe("5m ago");
-    expect(timeAgo(now - 3 * 3_600_000, now)).toBe("3h ago");
-    expect(timeAgo(now - 2 * 86_400_000, now)).toBe("2d ago");
-  });
-
-  it("labels social activity types in plain language", () => {
-    expect(activityLabel("new_follower")).toBe("New follower");
-    expect(activityLabel("comment")).toBe("Comment");
-    expect(activityLabel("unknown_kind")).toBe("Activity");
+    expect(loadStoredPfp(wallet, null)).toBeNull();
+    expect(() =>
+      storePfp(wallet, null, { mint: "m", image: null }),
+    ).not.toThrow();
   });
 });

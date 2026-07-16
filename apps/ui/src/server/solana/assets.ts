@@ -1,4 +1,13 @@
-import type { NFTAsset } from "@/lib/tapestry/types";
+export type NFTAsset = {
+  id: string;
+  name: string;
+  image: string | null;
+  description?: string | null;
+  collection?: string | null;
+  owner?: string | null;
+  attributes?: Array<{ trait_type?: string; value?: string | number }>;
+};
+
 import { solanaRpcConfig } from "@/server/env";
 
 type DasFile = {

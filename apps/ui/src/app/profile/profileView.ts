@@ -1,5 +1,3 @@
-import type { TradeHistoryEntry } from "@/lib/tapestry/types";
-
 export const PROFILE_NFT_PAGE_SIZE = 8;
 
 export type ProfileMilestone = {
@@ -18,20 +16,19 @@ export const formatShortAddress = (address: string) =>
     ? `${address.slice(0, 4)}...${address.slice(-4)}`
     : address;
 
-export const normalizeEpochMilliseconds = (value: number) =>
-  value > 0 && value < 10_000_000_000 ? value * 1000 : value;
-
+/*
+  Achievements are derived only from verified Business Frog holdings reported
+  by the FTX Worker; no social or trade metrics are fabricated client-side.
+*/
 export const buildProfileMilestones = (input: {
   frogCount: number;
-  followerCount: number;
-  recentTradeCount: number;
 }): ProfileMilestone[] => [
   {
     id: "hotshot",
     label: "Hotshot",
     icon: "/badge-hotshot.svg",
-    earned: input.recentTradeCount >= 1,
-    progress: `${Math.min(input.recentTradeCount, 1)}/1 recent trade`,
+    earned: input.frogCount >= 1,
+    progress: `${Math.min(input.frogCount, 1)}/1 frog held`,
   },
   {
     id: "samurai",
@@ -44,79 +41,51 @@ export const buildProfileMilestones = (input: {
     id: "trailblazer",
     label: "Trailblazer",
     icon: "/badge-trailblazer.svg",
-    earned: input.followerCount >= 10,
-    progress: `${Math.min(input.followerCount, 10)}/10 followers`,
+    earned: input.frogCount >= 15,
+    progress: `${Math.min(input.frogCount, 15)}/15 frogs held`,
   },
 ];
 
-export const shortMint = (mint: string) =>
-  mint.length > 10 ? `${mint.slice(0, 4)}...${mint.slice(-4)}` : mint;
+/*
+  Profile-frog selection persists per wallet in browser storage until an
+  FTX-native profile store exists server-side.
+*/
+export type StoredPfp = { mint: string; image: string | null };
 
-export type TradeTone = "buy" | "sell" | "swap";
+const pfpStorageKey = (walletAddress: string) =>
+  `ftx-profile-pfp:${walletAddress}`;
 
-export const tradeChip = (
-  trade: Pick<TradeHistoryEntry, "tradeType">,
-): { label: string; tone: TradeTone } => {
-  if (trade.tradeType === "buy") return { label: "BUY", tone: "buy" };
-  if (trade.tradeType === "sell") return { label: "SELL", tone: "sell" };
-  return { label: "SWAP", tone: "swap" };
-};
+type ReadableStorage = Pick<Storage, "getItem">;
+type WritableStorage = Pick<Storage, "setItem">;
 
-export const formatTokenAmount = (value: number) => {
-  if (!Number.isFinite(value)) return "0";
-  const magnitude = Math.abs(value);
-  if (magnitude >= 1_000_000_000)
-    return `${(value / 1_000_000_000).toFixed(2).replace(/\.?0+$/, "")}B`;
-  if (magnitude >= 1_000_000)
-    return `${(value / 1_000_000).toFixed(2).replace(/\.?0+$/, "")}M`;
-  if (magnitude >= 10_000)
-    return `${(value / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
-  if (magnitude >= 1) {
-    return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
+export const loadStoredPfp = (
+  walletAddress: string,
+  storage: ReadableStorage | null | undefined,
+): StoredPfp | null => {
+  if (!walletAddress || !storage) return null;
+  try {
+    const raw = storage.getItem(pfpStorageKey(walletAddress));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<StoredPfp> | null;
+    if (typeof parsed?.mint !== "string" || !parsed.mint) return null;
+    return {
+      mint: parsed.mint,
+      image: typeof parsed.image === "string" ? parsed.image : null,
+    };
+  } catch {
+    return null;
   }
-  if (magnitude === 0) return "0";
-  return value.toLocaleString("en-US", { maximumFractionDigits: 4 });
 };
 
-export const formatUsd = (value: number) => {
-  if (!Number.isFinite(value)) return null;
-  const magnitude = Math.abs(value);
-  if (magnitude > 0 && magnitude < 0.01) return "<$0.01";
-  return `${value < 0 ? "-" : ""}$${magnitude.toLocaleString("en-US", {
-    minimumFractionDigits: magnitude < 1000 ? 2 : 0,
-    maximumFractionDigits: magnitude < 1000 ? 2 : 0,
-  })}`;
-};
-
-export const timeAgo = (timestamp: number, now = Date.now()) => {
-  const elapsed = now - timestamp;
-  if (!Number.isFinite(elapsed) || elapsed < 0) return "just now";
-  const minutes = Math.floor(elapsed / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-  }).format(new Date(timestamp));
-};
-
-export const activityLabel = (type: string) => {
-  switch (type) {
-    case "new_follower":
-      return "New follower";
-    case "following":
-      return "Followed";
-    case "like":
-      return "Like";
-    case "comment":
-      return "Comment";
-    case "new_content":
-      return "Post";
-    default:
-      return "Activity";
+export const storePfp = (
+  walletAddress: string,
+  storage: WritableStorage | null | undefined,
+  pfp: StoredPfp,
+) => {
+  if (!walletAddress || !storage) return;
+  try {
+    storage.setItem(pfpStorageKey(walletAddress), JSON.stringify(pfp));
+  } catch {
+    // Storage may be unavailable (private mode); selection stays in memory.
   }
 };
