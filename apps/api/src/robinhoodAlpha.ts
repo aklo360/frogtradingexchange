@@ -576,6 +576,7 @@ function createGeckoRequester(input: {
   sleep: (milliseconds: number) => Promise<void>;
   requestIntervalMs: number;
 }): GeckoRequest {
+  const fetcher = input.fetcher;
   let requested = false;
   return async <T>(url: string): Promise<T> => {
     if (requested && input.requestIntervalMs > 0) {
@@ -584,7 +585,7 @@ function createGeckoRequester(input: {
     requested = true;
 
     for (let attempt = 1; attempt <= GECKO_MAX_ATTEMPTS; attempt += 1) {
-      const response = await input.fetcher(url, {
+      const response = await fetcher(url, {
         headers: { Accept: "application/json" },
       });
       if (response.ok) return (await response.json()) as T;

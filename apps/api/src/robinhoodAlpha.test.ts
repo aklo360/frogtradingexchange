@@ -317,16 +317,18 @@ describe("Robinhood Chain alpha API and scheduling", () => {
         return Response.json({ status: "not_found" }, { status: 404 });
       }),
     };
-    const marketFetch = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(
-        Response.json(
+    const responses = [
+      Response.json(
           { error: "rate limited" },
           { status: 429, headers: { "Retry-After": "0" } },
-        ),
-      )
-      .mockResolvedValueOnce(Response.json({ data: [] }))
-      .mockResolvedValueOnce(Response.json({ data: [] }));
+      ),
+      Response.json({ data: [] }),
+      Response.json({ data: [] }),
+    ];
+    const marketFetch = vi.fn(async function (this: unknown) {
+      expect(this).toBeUndefined();
+      return responses.shift()!;
+    }) as unknown as typeof fetch;
     const pause = vi.fn(async (_milliseconds: number) => undefined);
 
     await runRobinhoodAlphaScanner(env, {
