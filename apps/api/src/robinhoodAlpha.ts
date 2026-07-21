@@ -2,7 +2,10 @@ import type { Env } from "./env";
 
 const CHAIN = "robinhood";
 const CHAIN_ID = 4663;
+const NATIVE_ETH = "0x0000000000000000000000000000000000000000";
 const WETH = "0x0bd7d308f8e1639fab988df18a8011f41eacad73";
+const USDG = "0x5fc5360d0400a0fd4f2af552add042d716f1d168";
+const EXCLUDED_VOLUME_TOKEN_ADDRESSES = new Set([USDG, WETH]);
 const STORE_NAME = "__ribbot_robinhood_alpha__";
 const STORE_PATH = "/robinhood-alpha-state";
 const DEFAULT_GECKO_API = "https://api.geckoterminal.com/api/v2";
@@ -322,9 +325,16 @@ export function buildRobinhoodAlphaSnapshot(
 ): RobinhoodAlphaStoredState {
   const nowMs = input.now.getTime();
   const cutoff = nowMs - HISTORY_WINDOW_MS;
-  const discoveredPools = input.discoveredPools ?? input.pools;
+  const runnerPools = input.pools
+    .filter((pool) => !isExcludedVolumeToken(pool.tokenAddress))
+    .map(normalizeNativeEthPool);
+  const discoveredPools = (input.discoveredPools ?? runnerPools)
+    .filter((pool) => !isExcludedVolumeToken(pool.tokenAddress))
+    .map(normalizeNativeEthPool);
   const previousPools = input.previous?.pools ?? [];
   const observedPools = mergePools(previousPools, discoveredPools)
+    .filter((pool) => !isExcludedVolumeToken(pool.tokenAddress))
+    .map(normalizeNativeEthPool)
     .filter((pool) => dateMs(pool.createdAt) >= cutoff)
     .slice(0, 500);
   const poolsByToken = new Map(
@@ -334,6 +344,7 @@ export function buildRobinhoodAlphaSnapshot(
     ...(input.previous?.trades ?? []),
     ...input.trades,
   ])
+    .filter((trade) => !isExcludedVolumeToken(trade.tokenAddress))
     .filter((trade) => dateMs(trade.timestamp) >= cutoff)
     .sort((a, b) => dateMs(a.timestamp) - dateMs(b.timestamp))
     .slice(-MAX_STORED_TRADES);
@@ -405,7 +416,7 @@ export function buildRobinhoodAlphaSnapshot(
   const newSignals = buildSignals({
     now: input.now,
     config: input.config,
-    pools: input.pools,
+    pools: runnerPools,
     trades: mergedTrades,
     roster,
     provisional,
@@ -460,7 +471,7 @@ export function buildRobinhoodAlphaSnapshot(
       observedHistoryDays: round(observedHistoryDays, 2),
       config: input.config,
       summary: {
-        runnerPools: input.pools.length,
+        runnerPools: runnerPools.length,
         observedTrades: mergedTrades.length,
         candidateWallets: positionsByWallet.size,
         rosterWallets: roster.length,
@@ -471,7 +482,7 @@ export function buildRobinhoodAlphaSnapshot(
       },
       roster: roster.slice(0, 250),
       signals,
-      runnerPools: input.pools,
+      runnerPools,
       volumeLeaders,
       volumeSignals,
       warnings,
@@ -672,6 +683,7 @@ function selectRunnerPools(
   return pools
     .filter(
       (pool) =>
+        !isExcludedVolumeToken(pool.tokenAddress) &&
         pool.liquidityUsd >= config.minLiquidityUsd &&
         (pool.volume24hUsd >= config.minVolumeUsd ||
           pool.buys24h >= config.signalMinWallets),
@@ -768,7 +780,7 @@ function parsePool(resource: GeckoPoolResource): RobinhoodAlphaPool | null {
     !attributes ||
     !poolAddress ||
     !tokenAddress ||
-    tokenAddress === WETH ||
+    isExcludedVolumeToken(tokenAddress) ||
     !quoteToken
   ) {
     return null;
@@ -776,11 +788,14 @@ function parsePool(resource: GeckoPoolResource): RobinhoodAlphaPool | null {
   const createdAt = iso(attributes.pool_created_at);
   if (!createdAt) return null;
   const name = string(attributes.name) ?? `${short(tokenAddress)} / WETH`;
-  const tokenLabel = name.split(" / ")[0]?.trim() || short(tokenAddress);
+  const tokenLabel =
+    tokenAddress === NATIVE_ETH
+      ? "ETH"
+      : name.split(" / ")[0]?.trim() || short(tokenAddress);
   return {
     poolAddress,
     tokenAddress,
-    tokenName: tokenLabel,
+    tokenName: tokenAddress === NATIVE_ETH ? "Ethereum" : tokenLabel,
     tokenSymbol: tokenLabel,
     dex: string(resource.relationships?.dex?.data?.id) ?? "unknown",
     createdAt,
@@ -1140,8 +1155,12 @@ function mergeSignals(
 ): RobinhoodAlphaSignal[] {
   const merged = new Map<string, RobinhoodAlphaSignal>();
   for (const signal of [...previous, ...current]) {
-    if (dateMs(signal.detectedAt) >= cutoff)
-      merged.set(signal.signalId, signal);
+    if (
+      dateMs(signal.detectedAt) >= cutoff &&
+      !isExcludedVolumeToken(signal.tokenAddress)
+    ) {
+      merged.set(signal.signalId, normalizeNativeEthSignal(signal));
+    }
   }
   return Array.from(merged.values())
     .sort((a, b) => b.detectedAt.localeCompare(a.detectedAt))
@@ -1155,8 +1174,12 @@ function mergeVolumeSignals(
 ): RobinhoodVolumeSignal[] {
   const merged = new Map<string, RobinhoodVolumeSignal>();
   for (const signal of [...previous, ...current]) {
-    if (dateMs(signal.detectedAt) >= cutoff)
-      merged.set(signal.signalId, signal);
+    if (
+      dateMs(signal.detectedAt) >= cutoff &&
+      !isExcludedVolumeToken(signal.tokenAddress)
+    ) {
+      merged.set(signal.signalId, normalizeNativeEthSignal(signal));
+    }
   }
   return Array.from(merged.values())
     .sort((a, b) => b.detectedAt.localeCompare(a.detectedAt))
@@ -1235,6 +1258,36 @@ function mergePools(
   return Array.from(merged.values()).sort(
     (a, b) => dateMs(b.createdAt) - dateMs(a.createdAt),
   );
+}
+
+function isExcludedVolumeToken(tokenAddress: string): boolean {
+  return EXCLUDED_VOLUME_TOKEN_ADDRESSES.has(tokenAddress.toLowerCase());
+}
+
+function normalizeNativeEthPool(
+  pool: RobinhoodAlphaPool,
+): RobinhoodAlphaPool {
+  if (pool.tokenAddress.toLowerCase() !== NATIVE_ETH) return pool;
+  return {
+    ...pool,
+    tokenAddress: NATIVE_ETH,
+    tokenName: "Ethereum",
+    tokenSymbol: "ETH",
+    explorerUrl: "https://robinhoodchain.blockscout.com/",
+  };
+}
+
+function normalizeNativeEthSignal<
+  T extends RobinhoodAlphaSignal | RobinhoodVolumeSignal,
+>(signal: T): T {
+  if (signal.tokenAddress.toLowerCase() !== NATIVE_ETH) return signal;
+  return {
+    ...signal,
+    tokenAddress: NATIVE_ETH,
+    tokenName: "Ethereum",
+    tokenSymbol: "ETH",
+    explorerUrl: "https://robinhoodchain.blockscout.com/",
+  };
 }
 
 function runnerScore(pool: RobinhoodAlphaPool): number {

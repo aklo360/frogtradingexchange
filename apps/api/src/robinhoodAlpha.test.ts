@@ -216,6 +216,60 @@ describe("Robinhood Chain alpha scoring", () => {
 });
 
 describe("Robinhood Chain volume scanning", () => {
+  it("removes USDG and wrapped WETH while presenting native ETH as ETH", () => {
+    const usdg = {
+      ...pool(20),
+      tokenAddress: "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      tokenName: "Global Dollar",
+      tokenSymbol: "USDG",
+    };
+    const wrappedEth = {
+      ...pool(21),
+      tokenAddress: "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      tokenName: "Wrapped Ether",
+      tokenSymbol: "WETH",
+    };
+    const nativeEth = {
+      ...pool(22),
+      tokenAddress: "0x0000000000000000000000000000000000000000",
+      tokenName: "Wrapped Ether",
+      tokenSymbol: "WETH",
+    };
+    const pools = [usdg, wrappedEth, nativeEth];
+    const trades = pools.map((item, index) =>
+      trade({
+        id: index + 1,
+        wallet: 700 + index,
+        pool: item,
+        timestamp: "2026-07-21T02:45:00.000Z",
+      }),
+    );
+
+    const result = buildRobinhoodAlphaSnapshot({
+      now: NOW,
+      config: getRobinhoodAlphaConfig({}),
+      pools,
+      discoveredPools: pools,
+      trades,
+    });
+
+    expect(result.snapshot.runnerPools).toHaveLength(1);
+    expect(result.snapshot.volumeLeaders).toHaveLength(1);
+    expect(result.snapshot.volumeLeaders[0]).toMatchObject({
+      tokenAddress: nativeEth.tokenAddress,
+      tokenName: "Ethereum",
+      tokenSymbol: "ETH",
+    });
+    expect(result.snapshot.volumeSignals).toHaveLength(1);
+    expect(result.snapshot.volumeSignals[0].tokenSymbol).toBe("ETH");
+    expect(result.trades.map((item) => item.tokenAddress)).toEqual([
+      nativeEth.tokenAddress,
+    ]);
+    expect(result.pools.map((item) => item.tokenAddress)).toEqual([
+      nativeEth.tokenAddress,
+    ]);
+  });
+
   it("ranks the bounded pool universe by 24h volume", () => {
     const pools = [
       { ...pool(1), volume24hUsd: 30_000 },
