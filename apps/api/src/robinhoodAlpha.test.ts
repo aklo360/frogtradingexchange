@@ -16,7 +16,10 @@ const NOW = new Date("2026-07-21T03:00:00.000Z");
 const address = (value: number) => `0x${value.toString(16).padStart(40, "0")}`;
 const txHash = (value: number) => `0x${value.toString(16).padStart(64, "0")}`;
 
-function pool(index: number, createdAt = "2026-07-10T00:00:00.000Z"): RobinhoodAlphaPool {
+function pool(
+  index: number,
+  createdAt = "2026-07-10T00:00:00.000Z",
+): RobinhoodAlphaPool {
   const tokenAddress = address(1_000 + index);
   const poolAddress = address(2_000 + index);
   return {
@@ -31,6 +34,7 @@ function pool(index: number, createdAt = "2026-07-10T00:00:00.000Z"): RobinhoodA
     volume24hUsd: 100_000,
     liquidityUsd: 50_000,
     buys24h: 25,
+    sells24h: 15,
     geckoUrl: `https://www.geckoterminal.com/robinhood/pools/${poolAddress}`,
     explorerUrl: `https://robinhoodchain.blockscout.com/token/${tokenAddress}`,
   };
@@ -121,7 +125,9 @@ describe("Robinhood Chain alpha scoring", () => {
       qualifiedWalletCount: 4,
       provisional: true,
     });
-    expect(result.snapshot.warnings.join(" ")).toContain("not a full 30-day sample");
+    expect(result.snapshot.warnings.join(" ")).toContain(
+      "not a full 30-day sample",
+    );
   });
 
   it("does not signal with only three qualified wallets", () => {
@@ -141,7 +147,9 @@ describe("Robinhood Chain alpha scoring", () => {
     const copiedWallet = 900;
     const leader = address(100);
     const leaderTrades = fixture.trades.filter(
-      (item) => item.walletAddress === leader && item.tokenAddress !== fixture.pools[0].tokenAddress,
+      (item) =>
+        item.walletAddress === leader &&
+        item.tokenAddress !== fixture.pools[0].tokenAddress,
     );
     const copied = leaderTrades.map((item, index) => ({
       ...item,
@@ -152,13 +160,21 @@ describe("Robinhood Chain alpha scoring", () => {
     const duplicate = fixture.trades[0];
     const result = buildRobinhoodAlphaSnapshot({
       now: NOW,
-      config: getRobinhoodAlphaConfig({ ROBINHOOD_ALPHA_MAX_SPRAY_RATIO: "0.8" }),
+      config: getRobinhoodAlphaConfig({
+        ROBINHOOD_ALPHA_MAX_SPRAY_RATIO: "0.8",
+      }),
       pools: fixture.pools,
       trades: [...fixture.trades, duplicate, ...copied],
     });
 
-    expect(result.trades.filter((item) => item.id === duplicate.id)).toHaveLength(1);
-    expect(result.snapshot.roster.some((wallet) => wallet.walletAddress === address(copiedWallet))).toBe(false);
+    expect(
+      result.trades.filter((item) => item.id === duplicate.id),
+    ).toHaveLength(1);
+    expect(
+      result.snapshot.roster.some(
+        (wallet) => wallet.walletAddress === address(copiedWallet),
+      ),
+    ).toBe(false);
   });
 
   it("rejects a repeated wallet whose estimated positions are unprofitable", () => {
@@ -199,20 +215,119 @@ describe("Robinhood Chain alpha scoring", () => {
   });
 });
 
-function namespace(handler: (request: Request) => Promise<Response> | Response): DurableObjectNamespace {
+describe("Robinhood Chain volume scanning", () => {
+  it("ranks the bounded pool universe by 24h volume", () => {
+    const pools = [
+      { ...pool(1), volume24hUsd: 30_000 },
+      { ...pool(2), volume24hUsd: 90_000 },
+      { ...pool(3), volume24hUsd: 50_000 },
+    ];
+    const result = buildRobinhoodAlphaSnapshot({
+      now: NOW,
+      config: getRobinhoodAlphaConfig({}),
+      pools: [],
+      discoveredPools: pools,
+      trades: [],
+    });
+
+    expect(
+      result.snapshot.volumeLeaders.map((leader) => leader.tokenSymbol),
+    ).toEqual(["T2", "T3", "T1"]);
+    expect(result.snapshot.volumeLeaders[0]).toMatchObject({
+      rank: 1,
+      transactions24h: 40,
+    });
+    expect(result.snapshot.summary.volumePools).toBe(3);
+  });
+
+  it("signals a newly discovered pair after it clears the new-pair volume floor", () => {
+    const fresh = {
+      ...pool(10, "2026-07-21T02:30:00.000Z"),
+      volume24hUsd: 15_000,
+    };
+    const result = buildRobinhoodAlphaSnapshot({
+      now: NOW,
+      config: getRobinhoodAlphaConfig({}),
+      pools: [],
+      discoveredPools: [fresh],
+      trades: [],
+    });
+
+    expect(result.snapshot.volumeSignals).toHaveLength(1);
+    expect(result.snapshot.volumeSignals[0]).toMatchObject({
+      tokenAddress: fresh.tokenAddress,
+      reasons: ["new_pair"],
+      isNewPair: true,
+    });
+  });
+
+  it("signals a high-volume threshold crossing and a later volume surge", () => {
+    const base = { ...pool(11), volume24hUsd: 20_000 };
+    const previous = buildRobinhoodAlphaSnapshot({
+      now: NOW,
+      config: getRobinhoodAlphaConfig({}),
+      pools: [],
+      discoveredPools: [base],
+      trades: [],
+    });
+    const crossed = buildRobinhoodAlphaSnapshot({
+      now: new Date("2026-07-21T04:01:00.000Z"),
+      config: getRobinhoodAlphaConfig({}),
+      pools: [],
+      discoveredPools: [{ ...base, volume24hUsd: 35_000 }],
+      trades: [],
+      previous,
+    });
+
+    expect(crossed.snapshot.volumeSignals.at(-1)?.reasons).toEqual(
+      expect.arrayContaining(["high_volume", "volume_surge"]),
+    );
+  });
+
+  it("does not duplicate an unchanged pool signal inside the cooldown", () => {
+    const hot = { ...pool(12), volume24hUsd: 50_000 };
+    const previous = buildRobinhoodAlphaSnapshot({
+      now: NOW,
+      config: getRobinhoodAlphaConfig({}),
+      pools: [],
+      discoveredPools: [hot],
+      trades: [],
+    });
+    const current = buildRobinhoodAlphaSnapshot({
+      now: new Date("2026-07-21T03:15:00.000Z"),
+      config: getRobinhoodAlphaConfig({}),
+      pools: [],
+      discoveredPools: [hot],
+      trades: [],
+      previous,
+    });
+
+    expect(current.snapshot.volumeSignals).toHaveLength(1);
+    expect(current.snapshot.volumeSignals[0].signalId).toBe(
+      previous.snapshot.volumeSignals[0].signalId,
+    );
+  });
+});
+
+function namespace(
+  handler: (request: Request) => Promise<Response> | Response,
+): DurableObjectNamespace {
   return {
     idFromName: () => ({}) as DurableObjectId,
-    get: () => ({
-      fetch: (input: RequestInfo | URL, init?: RequestInit) =>
-        handler(input instanceof Request ? input : new Request(input, init)),
-    }) as unknown as DurableObjectStub,
+    get: () =>
+      ({
+        fetch: (input: RequestInfo | URL, init?: RequestInit) =>
+          handler(input instanceof Request ? input : new Request(input, init)),
+      }) as unknown as DurableObjectStub,
   } as unknown as DurableObjectNamespace;
 }
 
 describe("Robinhood Chain alpha API and scheduling", () => {
   it("requires the shared Ribbot bearer token", async () => {
     const response = await getRobinhoodAlphaSignals(
-      new Request("https://frogx.example/api/frogx/trading-bot/robinhood-alpha"),
+      new Request(
+        "https://frogx.example/api/frogx/trading-bot/robinhood-alpha",
+      ),
       { RIBBOT_TRADING_BOT_TOKEN: "secret" },
     );
     expect(response.status).toBe(401);
@@ -233,9 +348,12 @@ describe("Robinhood Chain alpha API and scheduling", () => {
       ),
     };
     const response = await getRobinhoodAlphaSignals(
-      new Request("https://frogx.example/api/frogx/trading-bot/robinhood-alpha", {
-        headers: { Authorization: "Bearer secret" },
-      }),
+      new Request(
+        "https://frogx.example/api/frogx/trading-bot/robinhood-alpha",
+        {
+          headers: { Authorization: "Bearer secret" },
+        },
+      ),
       env,
     );
     const body = (await response.json()) as Record<string, unknown>;
@@ -246,7 +364,10 @@ describe("Robinhood Chain alpha API and scheduling", () => {
 
   it("is a no-op while the operator scanner gate is disabled", async () => {
     const fetcher = vi.fn();
-    await runRobinhoodAlphaScanner({}, { fetch: fetcher as typeof fetch, now: () => NOW });
+    await runRobinhoodAlphaScanner(
+      {},
+      { fetch: fetcher as typeof fetch, now: () => NOW },
+    );
     expect(fetcher).not.toHaveBeenCalled();
   });
 
@@ -297,12 +418,17 @@ describe("Robinhood Chain alpha API and scheduling", () => {
     await runRobinhoodAlphaScanner(env, {
       fetch: marketFetch as typeof fetch,
       now: () => new Date("2026-07-21T03:20:00.000Z"),
+      requestIntervalMs: 0,
     });
 
     expect(marketFetch).toHaveBeenCalled();
     expect(stored.snapshot.signals).toHaveLength(1);
-    expect(stored.snapshot.lastError).toBe("market data unavailable");
-    expect(stored.snapshot.warnings.join(" ")).toContain("last good scanner snapshot");
+    expect(stored.snapshot.lastError).toBe(
+      "Every GeckoTerminal pool discovery feed failed",
+    );
+    expect(stored.snapshot.warnings.join(" ")).toContain(
+      "last good scanner snapshot",
+    );
   });
 
   it("backs off after a GeckoTerminal 429 and serializes pool discovery", async () => {
@@ -319,9 +445,10 @@ describe("Robinhood Chain alpha API and scheduling", () => {
     };
     const responses = [
       Response.json(
-          { error: "rate limited" },
-          { status: 429, headers: { "Retry-After": "0" } },
+        { error: "rate limited" },
+        { status: 429, headers: { "Retry-After": "0" } },
       ),
+      Response.json({ data: [] }),
       Response.json({ data: [] }),
       Response.json({ data: [] }),
     ];
@@ -338,9 +465,41 @@ describe("Robinhood Chain alpha API and scheduling", () => {
       requestIntervalMs: 1,
     });
 
-    expect(marketFetch).toHaveBeenCalledTimes(3);
+    expect(marketFetch).toHaveBeenCalledTimes(4);
     expect(pause).toHaveBeenNthCalledWith(1, 0);
     expect(pause).toHaveBeenNthCalledWith(2, 1);
+    expect(pause).toHaveBeenNthCalledWith(3, 1);
     expect(stored?.snapshot.status).toBe("provisional");
+  });
+
+  it("keeps partial pool discovery and labels the skipped feed", async () => {
+    let stored: RobinhoodAlphaStoredState | undefined;
+    const env: Env = {
+      ROBINHOOD_ALPHA_SCANNER_ENABLED: "true",
+      TRADING_BOT_ACCOUNTS: namespace(async (request) => {
+        if (request.method === "PUT") {
+          stored = (await request.json()) as RobinhoodAlphaStoredState;
+          return Response.json({ status: "ready" });
+        }
+        return Response.json({ status: "not_found" }, { status: 404 });
+      }),
+    };
+    const responses = [
+      Response.json({ error: "unavailable" }, { status: 400 }),
+      Response.json({ data: [] }),
+      Response.json({ data: [] }),
+    ];
+    const marketFetch = vi.fn(async () => responses.shift()!) as unknown as typeof fetch;
+
+    await runRobinhoodAlphaScanner(env, {
+      fetch: marketFetch,
+      now: () => NOW,
+      requestIntervalMs: 0,
+    });
+
+    expect(stored?.snapshot.warnings.join(" ")).toContain(
+      "Skipped GeckoTerminal top pool discovery",
+    );
+    expect(stored?.snapshot.summary.volumePools).toBe(0);
   });
 });

@@ -10,6 +10,8 @@ const HISTORY_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const FRESH_POOL_MS = 24 * 60 * 60 * 1000;
 const MAX_STORED_TRADES = 12_000;
 const MAX_SIGNALS = 50;
+const MAX_VOLUME_SIGNALS = 100;
+const MAX_VOLUME_LEADERS = 25;
 const GECKO_REQUEST_INTERVAL_MS = 2_500;
 const GECKO_MAX_ATTEMPTS = 4;
 
@@ -26,6 +28,12 @@ export type RobinhoodAlphaConfig = {
   minimumWinReturnPct: number;
   copyWindowSeconds: number;
   maxCopyOverlapRatio: number;
+  highVolumeMinUsd: number;
+  newPairMaxAgeMinutes: number;
+  newPairMinVolumeUsd: number;
+  volumeSurgeRatio: number;
+  volumeSurgeMinDeltaUsd: number;
+  volumeSignalCooldownMinutes: number;
 };
 
 export type RobinhoodAlphaPool = {
@@ -40,6 +48,7 @@ export type RobinhoodAlphaPool = {
   volume24hUsd: number;
   liquidityUsd: number;
   buys24h: number;
+  sells24h: number;
   geckoUrl: string;
   explorerUrl: string;
 };
@@ -92,6 +101,44 @@ export type RobinhoodAlphaSignal = {
   disclaimer: string;
 };
 
+export type RobinhoodVolumeLeader = {
+  rank: number;
+  tokenAddress: string;
+  tokenName: string;
+  tokenSymbol: string;
+  poolAddress: string;
+  dex: string;
+  createdAt: string;
+  poolAgeMinutes: number;
+  isNewPair: boolean;
+  priceUsd: number;
+  priceChange24h: number;
+  liquidityUsd: number;
+  volume24hUsd: number;
+  volumeLiquidityRatio: number;
+  buys24h: number;
+  sells24h: number;
+  transactions24h: number;
+  geckoUrl: string;
+  explorerUrl: string;
+};
+
+export type RobinhoodVolumeSignalReason =
+  | "new_pair"
+  | "high_volume"
+  | "volume_surge";
+
+export type RobinhoodVolumeSignal = Omit<RobinhoodVolumeLeader, "rank"> & {
+  signalId: string;
+  detectedAt: string;
+  reasons: RobinhoodVolumeSignalReason[];
+  previousVolume24hUsd: number;
+  volumeChangeUsd: number;
+  volumeChangeRatio: number | null;
+  provisional: boolean;
+  disclaimer: string;
+};
+
 export type RobinhoodAlphaSnapshot = {
   status: "ready" | "provisional";
   chain: typeof CHAIN;
@@ -106,10 +153,15 @@ export type RobinhoodAlphaSnapshot = {
     candidateWallets: number;
     rosterWallets: number;
     recentSignals: number;
+    volumePools: number;
+    volumeLeaders: number;
+    recentVolumeSignals: number;
   };
   roster: RobinhoodAlphaWalletScore[];
   signals: RobinhoodAlphaSignal[];
   runnerPools: RobinhoodAlphaPool[];
+  volumeLeaders: RobinhoodVolumeLeader[];
+  volumeSignals: RobinhoodVolumeSignal[];
   warnings: string[];
   lastError?: string;
 };
@@ -130,7 +182,7 @@ type GeckoPoolResource = {
     price_change_percentage?: { h24?: unknown };
     volume_usd?: { h24?: unknown };
     reserve_in_usd?: unknown;
-    transactions?: { h24?: { buys?: unknown } };
+    transactions?: { h24?: { buys?: unknown; sells?: unknown } };
   };
   relationships?: {
     base_token?: { data?: { id?: unknown } };
@@ -168,6 +220,7 @@ type BuildSnapshotInput = {
   config: RobinhoodAlphaConfig;
   pools: RobinhoodAlphaPool[];
   trades: RobinhoodAlphaTrade[];
+  discoveredPools?: RobinhoodAlphaPool[];
   previous?: RobinhoodAlphaStoredState | null;
   ingestionWarnings?: string[];
 };
@@ -220,21 +273,47 @@ export function getRobinhoodAlphaConfig(env: Env): RobinhoodAlphaConfig {
       20,
       3,
     ),
-    minWinRate: numberEnv(
-      env.ROBINHOOD_ALPHA_MIN_WIN_RATE,
-      0.1,
-      1,
-      0.55,
-    ),
-    maxSprayRatio: numberEnv(
-      env.ROBINHOOD_ALPHA_MAX_SPRAY_RATIO,
-      0.05,
-      1,
-      0.5,
-    ),
+    minWinRate: numberEnv(env.ROBINHOOD_ALPHA_MIN_WIN_RATE, 0.1, 1, 0.55),
+    maxSprayRatio: numberEnv(env.ROBINHOOD_ALPHA_MAX_SPRAY_RATIO, 0.05, 1, 0.5),
     minimumWinReturnPct: 20,
     copyWindowSeconds: 10,
     maxCopyOverlapRatio: 0.8,
+    highVolumeMinUsd: numberEnv(
+      env.ROBINHOOD_VOLUME_MIN_USD,
+      0,
+      1_000_000_000,
+      25_000,
+    ),
+    newPairMaxAgeMinutes: integerEnv(
+      env.ROBINHOOD_NEW_PAIR_MAX_AGE_MINUTES,
+      5,
+      10_080,
+      360,
+    ),
+    newPairMinVolumeUsd: numberEnv(
+      env.ROBINHOOD_NEW_PAIR_MIN_VOLUME_USD,
+      0,
+      1_000_000_000,
+      10_000,
+    ),
+    volumeSurgeRatio: numberEnv(
+      env.ROBINHOOD_VOLUME_SURGE_RATIO,
+      1.01,
+      100,
+      1.5,
+    ),
+    volumeSurgeMinDeltaUsd: numberEnv(
+      env.ROBINHOOD_VOLUME_SURGE_MIN_DELTA_USD,
+      0,
+      1_000_000_000,
+      10_000,
+    ),
+    volumeSignalCooldownMinutes: integerEnv(
+      env.ROBINHOOD_VOLUME_SIGNAL_COOLDOWN_MINUTES,
+      5,
+      1_440,
+      60,
+    ),
   };
 }
 
@@ -243,7 +322,9 @@ export function buildRobinhoodAlphaSnapshot(
 ): RobinhoodAlphaStoredState {
   const nowMs = input.now.getTime();
   const cutoff = nowMs - HISTORY_WINDOW_MS;
-  const observedPools = mergePools(input.previous?.pools ?? [], input.pools)
+  const discoveredPools = input.discoveredPools ?? input.pools;
+  const previousPools = input.previous?.pools ?? [];
+  const observedPools = mergePools(previousPools, discoveredPools)
     .filter((pool) => dateMs(pool.createdAt) >= cutoff)
     .slice(0, 500);
   const poolsByToken = new Map(
@@ -257,7 +338,9 @@ export function buildRobinhoodAlphaSnapshot(
     .sort((a, b) => dateMs(a.timestamp) - dateMs(b.timestamp))
     .slice(-MAX_STORED_TRADES);
 
-  const tokenUniverse = new Set(mergedTrades.map((trade) => trade.tokenAddress));
+  const tokenUniverse = new Set(
+    mergedTrades.map((trade) => trade.tokenAddress),
+  );
   const positionsByWallet = buildPositions(mergedTrades);
   const copyOverlap = calculateCopyOverlap(mergedTrades, input.config);
   const roster: RobinhoodAlphaWalletScore[] = [];
@@ -313,7 +396,9 @@ export function buildRobinhoodAlphaSnapshot(
       explorerUrl: `https://robinhoodchain.blockscout.com/address/${walletAddress}`,
     });
   }
-  roster.sort((a, b) => b.score - a.score || b.estimatedPnlUsd - a.estimatedPnlUsd);
+  roster.sort(
+    (a, b) => b.score - a.score || b.estimatedPnlUsd - a.estimatedPnlUsd,
+  );
 
   const observedHistoryDays = observedDays(mergedTrades, input.now);
   const provisional = observedHistoryDays < 30;
@@ -330,10 +415,29 @@ export function buildRobinhoodAlphaSnapshot(
     newSignals,
     cutoff,
   );
+  const volumeLeaders = buildVolumeLeaders(
+    discoveredPools,
+    input.now,
+    input.config,
+  );
+  const newVolumeSignals = buildVolumeSignals({
+    now: input.now,
+    config: input.config,
+    pools: discoveredPools,
+    previousPools,
+    previousSignals: input.previous?.snapshot.volumeSignals ?? [],
+    provisional,
+  });
+  const volumeSignals = mergeVolumeSignals(
+    input.previous?.snapshot.volumeSignals ?? [],
+    newVolumeSignals,
+    cutoff,
+  );
   const warnings = [
     "Read-only research signal; no Robinhood Chain transaction is built, signed, or sent.",
     "Wallet returns are estimates from observed DEX trades and current pool prices, not audited tax-lot PNL.",
     "Copy/farm rejection is behavioral; shared-funder bundler detection remains unverified without archive funding-graph enrichment.",
+    "Volume coverage is a bounded GeckoTerminal union of page 1 top, trending, and new Robinhood pools; it is not an exhaustive chain index.",
     ...(input.ingestionWarnings ?? []),
     ...(provisional
       ? [
@@ -361,10 +465,15 @@ export function buildRobinhoodAlphaSnapshot(
         candidateWallets: positionsByWallet.size,
         rosterWallets: roster.length,
         recentSignals: signals.length,
+        volumePools: discoveredPools.length,
+        volumeLeaders: volumeLeaders.length,
+        recentVolumeSignals: volumeSignals.length,
       },
       roster: roster.slice(0, 250),
       signals,
       runnerPools: input.pools,
+      volumeLeaders,
+      volumeSignals,
       warnings,
     },
     trades: mergedTrades,
@@ -397,9 +506,11 @@ export async function runRobinhoodAlphaScanner(
       dependencies.requestIntervalMs ?? GECKO_REQUEST_INTERVAL_MS,
   });
   try {
-    const pools = await fetchRunnerPools(env, config, geckoRequest);
+    const discovery = await fetchPoolUniverse(env, geckoRequest);
+    const discoveredPools = discovery.pools;
+    const pools = selectRunnerPools(discoveredPools, config);
     const trades: RobinhoodAlphaTrade[] = [];
-    const ingestionWarnings: string[] = [];
+    const ingestionWarnings: string[] = [...discovery.warnings];
     let successfulPoolReads = 0;
     for (const pool of pools) {
       try {
@@ -412,12 +523,15 @@ export async function runRobinhoodAlphaScanner(
       }
     }
     if (pools.length > 0 && successfulPoolReads === 0) {
-      throw new Error("Every selected GeckoTerminal pool trade request failed");
+      ingestionWarnings.push(
+        "Every selected pool trade feed failed during this refresh; volume rankings were refreshed while wallet history was retained.",
+      );
     }
     const state = buildRobinhoodAlphaSnapshot({
       now,
       config,
       pools,
+      discoveredPools,
       trades,
       previous,
       ingestionWarnings,
@@ -451,8 +565,7 @@ export async function getRobinhoodAlphaSignals(
   env: Env,
 ): Promise<Response> {
   const token =
-    env.RIBBOT_TRADING_BOT_TOKEN?.trim() ||
-    env.FROGX_BOT_API_TOKEN?.trim();
+    env.RIBBOT_TRADING_BOT_TOKEN?.trim() || env.FROGX_BOT_API_TOKEN?.trim();
   if (!token) {
     return Response.json(
       { status: "not_configured", required: ["RIBBOT_TRADING_BOT_TOKEN"] },
@@ -504,26 +617,39 @@ export async function writeRobinhoodAlphaStoreRequest(
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
   if (!isStoredState(body)) {
-    return Response.json({ error: "Invalid alpha scanner state" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid alpha scanner state" },
+      { status: 400 },
+    );
   }
   await state.storage.put("robinhood-alpha-state", body);
   return Response.json({ status: "ready" });
 }
 
-async function fetchRunnerPools(
+async function fetchPoolUniverse(
   env: Env,
-  config: RobinhoodAlphaConfig,
   requestJson: GeckoRequest,
-): Promise<RobinhoodAlphaPool[]> {
+): Promise<{ pools: RobinhoodAlphaPool[]; warnings: string[] }> {
   const base = geckoBase(env);
-  const urls = [
-    `${base}/networks/${CHAIN}/trending_pools?page=1`,
-    `${base}/networks/${CHAIN}/new_pools?page=1`,
-  ];
+  const feeds = [
+    ["top", `${base}/networks/${CHAIN}/pools?page=1`],
+    ["trending", `${base}/networks/${CHAIN}/trending_pools?page=1`],
+    ["new", `${base}/networks/${CHAIN}/new_pools?page=1`],
+  ] as const;
   const responses: GeckoPoolResource[][] = [];
-  for (const url of urls) {
-    const data = await requestJson<{ data?: GeckoPoolResource[] }>(url);
-    responses.push(data.data ?? []);
+  const warnings: string[] = [];
+  for (const [label, url] of feeds) {
+    try {
+      const data = await requestJson<{ data?: GeckoPoolResource[] }>(url);
+      responses.push(data.data ?? []);
+    } catch (error) {
+      warnings.push(
+        `Skipped GeckoTerminal ${label} pool discovery during this refresh: ${safeError(error)}.`,
+      );
+    }
+  }
+  if (responses.length === 0) {
+    throw new Error("Every GeckoTerminal pool discovery feed failed");
   }
   const pools = responses
     .flat()
@@ -531,11 +657,24 @@ async function fetchRunnerPools(
     .filter((pool): pool is RobinhoodAlphaPool => Boolean(pool));
   const uniquePools = new Map<string, RobinhoodAlphaPool>();
   for (const pool of pools) uniquePools.set(pool.poolAddress, pool);
-  return Array.from(uniquePools.values())
+  return {
+    pools: Array.from(uniquePools.values()).sort(
+      (a, b) => b.volume24hUsd - a.volume24hUsd,
+    ),
+    warnings,
+  };
+}
+
+function selectRunnerPools(
+  pools: RobinhoodAlphaPool[],
+  config: RobinhoodAlphaConfig,
+): RobinhoodAlphaPool[] {
+  return pools
     .filter(
       (pool) =>
         pool.liquidityUsd >= config.minLiquidityUsd &&
-        (pool.volume24hUsd >= config.minVolumeUsd || pool.buys24h >= config.signalMinWallets),
+        (pool.volume24hUsd >= config.minVolumeUsd ||
+          pool.buys24h >= config.signalMinWallets),
     )
     .sort((a, b) => runnerScore(b) - runnerScore(a))
     .slice(0, config.maxPools);
@@ -649,7 +788,14 @@ function parsePool(resource: GeckoPoolResource): RobinhoodAlphaPool | null {
     priceChange24h: finite(attributes.price_change_percentage?.h24),
     volume24hUsd: finite(attributes.volume_usd?.h24),
     liquidityUsd: finite(attributes.reserve_in_usd),
-    buys24h: Math.max(0, Math.trunc(finite(attributes.transactions?.h24?.buys))),
+    buys24h: Math.max(
+      0,
+      Math.trunc(finite(attributes.transactions?.h24?.buys)),
+    ),
+    sells24h: Math.max(
+      0,
+      Math.trunc(finite(attributes.transactions?.h24?.sells)),
+    ),
     geckoUrl: `https://www.geckoterminal.com/robinhood/pools/${poolAddress}`,
     explorerUrl: `https://robinhoodchain.blockscout.com/token/${tokenAddress}`,
   };
@@ -663,18 +809,28 @@ function parseTrade(
   const txHash = hash(attributes?.tx_hash);
   const walletAddress = address(attributes?.tx_from_address);
   const timestamp = iso(attributes?.block_timestamp);
-  const kind = attributes?.kind === "buy" || attributes?.kind === "sell" ? attributes.kind : null;
-  if (!attributes || !txHash || !walletAddress || !timestamp || !kind) return null;
+  const kind =
+    attributes?.kind === "buy" || attributes?.kind === "sell"
+      ? attributes.kind
+      : null;
+  if (!attributes || !txHash || !walletAddress || !timestamp || !kind)
+    return null;
   const tokenSide = kind === "buy" ? "to" : "from";
   const tradedToken = address(
-    tokenSide === "to" ? attributes.to_token_address : attributes.from_token_address,
+    tokenSide === "to"
+      ? attributes.to_token_address
+      : attributes.from_token_address,
   );
   if (tradedToken !== pool.tokenAddress) return null;
   const tokenAmount = finite(
-    tokenSide === "to" ? attributes.to_token_amount : attributes.from_token_amount,
+    tokenSide === "to"
+      ? attributes.to_token_amount
+      : attributes.from_token_amount,
   );
   const tokenPriceUsd = finite(
-    tokenSide === "to" ? attributes.price_to_in_usd : attributes.price_from_in_usd,
+    tokenSide === "to"
+      ? attributes.price_to_in_usd
+      : attributes.price_from_in_usd,
   );
   const volumeUsd = finite(attributes.volume_in_usd);
   if (tokenAmount <= 0 || volumeUsd <= 0) return null;
@@ -697,7 +853,8 @@ function buildPositions(
 ): Map<string, Map<string, TokenPosition>> {
   const result = new Map<string, Map<string, TokenPosition>>();
   for (const trade of trades) {
-    const wallet = result.get(trade.walletAddress) ?? new Map<string, TokenPosition>();
+    const wallet =
+      result.get(trade.walletAddress) ?? new Map<string, TokenPosition>();
     const position = wallet.get(trade.tokenAddress) ?? {
       tokenAddress: trade.tokenAddress,
       buysUsd: 0,
@@ -709,7 +866,8 @@ function buildPositions(
     if (trade.kind === "buy") {
       position.buysUsd += trade.volumeUsd;
       position.boughtTokens += trade.tokenAmount;
-      if (trade.timestamp > position.lastBuyAt) position.lastBuyAt = trade.timestamp;
+      if (trade.timestamp > position.lastBuyAt)
+        position.lastBuyAt = trade.timestamp;
     } else {
       position.sellsUsd += trade.volumeUsd;
       position.soldTokens += trade.tokenAmount;
@@ -725,8 +883,12 @@ function scorePosition(
   poolsByToken: Map<string, RobinhoodAlphaPool>,
 ) {
   const currentPrice = poolsByToken.get(position.tokenAddress)?.priceUsd ?? 0;
-  const remainingTokens = Math.max(0, position.boughtTokens - position.soldTokens);
-  const pnlUsd = position.sellsUsd + remainingTokens * currentPrice - position.buysUsd;
+  const remainingTokens = Math.max(
+    0,
+    position.boughtTokens - position.soldTokens,
+  );
+  const pnlUsd =
+    position.sellsUsd + remainingTokens * currentPrice - position.buysUsd;
   return {
     pnlUsd,
     returnPct: position.buysUsd > 0 ? (pnlUsd / position.buysUsd) * 100 : -100,
@@ -775,14 +937,20 @@ function buildSignals(input: {
   roster: RobinhoodAlphaWalletScore[];
   provisional: boolean;
 }): RobinhoodAlphaSignal[] {
-  const rosterByWallet = new Map(input.roster.map((wallet) => [wallet.walletAddress, wallet]));
-  const cutoff = input.now.getTime() - input.config.signalWindowMinutes * 60_000;
-  const poolsByToken = new Map(input.pools.map((pool) => [pool.tokenAddress, pool]));
+  const rosterByWallet = new Map(
+    input.roster.map((wallet) => [wallet.walletAddress, wallet]),
+  );
+  const cutoff =
+    input.now.getTime() - input.config.signalWindowMinutes * 60_000;
+  const poolsByToken = new Map(
+    input.pools.map((pool) => [pool.tokenAddress, pool]),
+  );
   const buyersByToken = new Map<string, Map<string, RobinhoodAlphaTrade>>();
   for (const trade of input.trades) {
     if (trade.kind !== "buy" || dateMs(trade.timestamp) < cutoff) continue;
     const pool = poolsByToken.get(trade.tokenAddress);
-    if (!pool || input.now.getTime() - dateMs(pool.createdAt) > FRESH_POOL_MS) continue;
+    if (!pool || input.now.getTime() - dateMs(pool.createdAt) > FRESH_POOL_MS)
+      continue;
     if (!rosterByWallet.has(trade.walletAddress)) continue;
     const buyers = buyersByToken.get(trade.tokenAddress) ?? new Map();
     buyers.set(trade.walletAddress, trade);
@@ -793,9 +961,13 @@ function buildSignals(input: {
     if (buyers.size < input.config.signalMinWallets) continue;
     const pool = poolsByToken.get(tokenAddress)!;
     const wallets = Array.from(buyers.keys()).sort();
-    const latestAt = Math.max(...Array.from(buyers.values()).map((trade) => dateMs(trade.timestamp)));
+    const latestAt = Math.max(
+      ...Array.from(buyers.values()).map((trade) => dateMs(trade.timestamp)),
+    );
     const scores = wallets.map((wallet) => rosterByWallet.get(wallet)!.score);
-    const bucket = Math.floor(latestAt / (input.config.signalWindowMinutes * 60_000));
+    const bucket = Math.floor(
+      latestAt / (input.config.signalWindowMinutes * 60_000),
+    );
     signals.push({
       signalId: `${CHAIN}:${tokenAddress}:${bucket}`,
       tokenAddress,
@@ -810,14 +982,155 @@ function buildSignals(input: {
       priceUsd: pool.priceUsd,
       liquidityUsd: round(pool.liquidityUsd, 2),
       volume24hUsd: round(pool.volume24hUsd, 2),
-      poolAgeMinutes: Math.max(0, Math.round((input.now.getTime() - dateMs(pool.createdAt)) / 60_000)),
+      poolAgeMinutes: Math.max(
+        0,
+        Math.round((input.now.getTime() - dateMs(pool.createdAt)) / 60_000),
+      ),
       provisional: input.provisional,
       geckoUrl: pool.geckoUrl,
       explorerUrl: pool.explorerUrl,
-      disclaimer: "Research signal only; verify liquidity, contract risk, and jurisdiction before acting.",
+      disclaimer:
+        "Research signal only; verify liquidity, contract risk, and jurisdiction before acting.",
     });
   }
   return signals.sort((a, b) => b.detectedAt.localeCompare(a.detectedAt));
+}
+
+export function buildVolumeLeaders(
+  pools: RobinhoodAlphaPool[],
+  now: Date,
+  config: RobinhoodAlphaConfig,
+): RobinhoodVolumeLeader[] {
+  return pools
+    .map((pool) => volumeLeader(pool, now, config.newPairMaxAgeMinutes))
+    .filter(
+      (leader) =>
+        leader.volume24hUsd >= config.highVolumeMinUsd ||
+        (leader.isNewPair && leader.volume24hUsd >= config.newPairMinVolumeUsd),
+    )
+    .sort(
+      (a, b) =>
+        b.volume24hUsd - a.volume24hUsd ||
+        b.transactions24h - a.transactions24h,
+    )
+    .slice(0, MAX_VOLUME_LEADERS)
+    .map((leader, index) => ({ ...leader, rank: index + 1 }));
+}
+
+export function buildVolumeSignals(input: {
+  now: Date;
+  config: RobinhoodAlphaConfig;
+  pools: RobinhoodAlphaPool[];
+  previousPools: RobinhoodAlphaPool[];
+  previousSignals: RobinhoodVolumeSignal[];
+  provisional: boolean;
+}): RobinhoodVolumeSignal[] {
+  const previousByPool = new Map(
+    input.previousPools.map((pool) => [pool.poolAddress, pool]),
+  );
+  const cooldownMs = input.config.volumeSignalCooldownMinutes * 60_000;
+  const cooldownCutoff = input.now.getTime() - cooldownMs;
+  const recentlySignaledPools = new Set(
+    input.previousSignals
+      .filter((signal) => dateMs(signal.detectedAt) > cooldownCutoff)
+      .map((signal) => signal.poolAddress),
+  );
+  const bucket = Math.floor(input.now.getTime() / cooldownMs);
+  const signals: RobinhoodVolumeSignal[] = [];
+
+  for (const pool of input.pools) {
+    if (recentlySignaledPools.has(pool.poolAddress)) continue;
+    const previous = previousByPool.get(pool.poolAddress);
+    const previousVolume = previous?.volume24hUsd ?? 0;
+    const volumeChangeUsd = pool.volume24hUsd - previousVolume;
+    const volumeChangeRatio =
+      previousVolume > 0 ? pool.volume24hUsd / previousVolume : null;
+    const leader = volumeLeader(
+      pool,
+      input.now,
+      input.config.newPairMaxAgeMinutes,
+    );
+    const reasons: RobinhoodVolumeSignalReason[] = [];
+
+    if (
+      !previous &&
+      leader.isNewPair &&
+      pool.volume24hUsd >= input.config.newPairMinVolumeUsd
+    ) {
+      reasons.push("new_pair");
+    }
+    if (
+      pool.volume24hUsd >= input.config.highVolumeMinUsd &&
+      (!previous || previousVolume < input.config.highVolumeMinUsd)
+    ) {
+      reasons.push("high_volume");
+    }
+    if (
+      volumeChangeRatio !== null &&
+      volumeChangeRatio >= input.config.volumeSurgeRatio &&
+      volumeChangeUsd >= input.config.volumeSurgeMinDeltaUsd
+    ) {
+      reasons.push("volume_surge");
+    }
+    if (reasons.length === 0) continue;
+
+    const { rank: _rank, ...leaderFields } = leader;
+    signals.push({
+      ...leaderFields,
+      signalId: `${CHAIN}:volume:${pool.poolAddress}:${bucket}`,
+      detectedAt: input.now.toISOString(),
+      reasons,
+      previousVolume24hUsd: round(previousVolume, 2),
+      volumeChangeUsd: round(volumeChangeUsd, 2),
+      volumeChangeRatio:
+        volumeChangeRatio === null ? null : round(volumeChangeRatio, 2),
+      provisional: input.provisional,
+      disclaimer:
+        "Research signal only; high volume can be inorganic. Verify liquidity, holders, contract risk, and tradeability before acting.",
+    });
+  }
+
+  return signals.sort(
+    (a, b) =>
+      b.volume24hUsd - a.volume24hUsd ||
+      b.detectedAt.localeCompare(a.detectedAt),
+  );
+}
+
+function volumeLeader(
+  pool: RobinhoodAlphaPool,
+  now: Date,
+  newPairMaxAgeMinutes: number,
+): RobinhoodVolumeLeader {
+  const poolAgeMinutes = Math.max(
+    0,
+    Math.round((now.getTime() - dateMs(pool.createdAt)) / 60_000),
+  );
+  const sells24h = pool.sells24h ?? 0;
+  return {
+    rank: 0,
+    tokenAddress: pool.tokenAddress,
+    tokenName: pool.tokenName,
+    tokenSymbol: pool.tokenSymbol,
+    poolAddress: pool.poolAddress,
+    dex: pool.dex,
+    createdAt: pool.createdAt,
+    poolAgeMinutes,
+    isNewPair: poolAgeMinutes <= newPairMaxAgeMinutes,
+    priceUsd: pool.priceUsd,
+    priceChange24h: round(pool.priceChange24h, 2),
+    liquidityUsd: round(pool.liquidityUsd, 2),
+    volume24hUsd: round(pool.volume24hUsd, 2),
+    volumeLiquidityRatio:
+      pool.liquidityUsd > 0
+        ? round(pool.volume24hUsd / pool.liquidityUsd, 2)
+        : 0,
+    buys24h: pool.buys24h,
+    sells24h,
+    transactions24h: pool.buys24h + sells24h,
+    geckoUrl: pool.geckoUrl,
+    explorerUrl: pool.explorerUrl,
+  };
 }
 
 function mergeSignals(
@@ -827,11 +1140,27 @@ function mergeSignals(
 ): RobinhoodAlphaSignal[] {
   const merged = new Map<string, RobinhoodAlphaSignal>();
   for (const signal of [...previous, ...current]) {
-    if (dateMs(signal.detectedAt) >= cutoff) merged.set(signal.signalId, signal);
+    if (dateMs(signal.detectedAt) >= cutoff)
+      merged.set(signal.signalId, signal);
   }
   return Array.from(merged.values())
     .sort((a, b) => b.detectedAt.localeCompare(a.detectedAt))
     .slice(0, MAX_SIGNALS);
+}
+
+function mergeVolumeSignals(
+  previous: RobinhoodVolumeSignal[],
+  current: RobinhoodVolumeSignal[],
+  cutoff: number,
+): RobinhoodVolumeSignal[] {
+  const merged = new Map<string, RobinhoodVolumeSignal>();
+  for (const signal of [...previous, ...current]) {
+    if (dateMs(signal.detectedAt) >= cutoff)
+      merged.set(signal.signalId, signal);
+  }
+  return Array.from(merged.values())
+    .sort((a, b) => b.detectedAt.localeCompare(a.detectedAt))
+    .slice(0, MAX_VOLUME_SIGNALS);
 }
 
 function dedupeTrades(trades: RobinhoodAlphaTrade[]): RobinhoodAlphaTrade[] {
@@ -842,15 +1171,20 @@ function dedupeTrades(trades: RobinhoodAlphaTrade[]): RobinhoodAlphaTrade[] {
 
 function alphaStore(env: Env): DurableObjectStub | null {
   if (!env.TRADING_BOT_ACCOUNTS) return null;
-  return env.TRADING_BOT_ACCOUNTS.get(env.TRADING_BOT_ACCOUNTS.idFromName(STORE_NAME));
+  return env.TRADING_BOT_ACCOUNTS.get(
+    env.TRADING_BOT_ACCOUNTS.idFromName(STORE_NAME),
+  );
 }
 
 async function readStoredState(
   store: DurableObjectStub,
 ): Promise<RobinhoodAlphaStoredState | null> {
-  const response = await store.fetch(`https://trading-bot-account.local${STORE_PATH}`);
+  const response = await store.fetch(
+    `https://trading-bot-account.local${STORE_PATH}`,
+  );
   if (response.status === 404) return null;
-  if (!response.ok) throw new Error(`Alpha store read failed with status ${response.status}`);
+  if (!response.ok)
+    throw new Error(`Alpha store read failed with status ${response.status}`);
   const body = (await response.json()) as { state?: RobinhoodAlphaStoredState };
   return body.state ?? null;
 }
@@ -859,16 +1193,23 @@ async function writeStoredState(
   store: DurableObjectStub,
   state: RobinhoodAlphaStoredState,
 ): Promise<void> {
-  const response = await store.fetch(`https://trading-bot-account.local${STORE_PATH}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(state),
-  });
-  if (!response.ok) throw new Error(`Alpha store write failed with status ${response.status}`);
+  const response = await store.fetch(
+    `https://trading-bot-account.local${STORE_PATH}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(state),
+    },
+  );
+  if (!response.ok)
+    throw new Error(`Alpha store write failed with status ${response.status}`);
 }
 
 function geckoBase(env: Env): string {
-  return (env.GECKO_TERMINAL_API_URL?.trim() || DEFAULT_GECKO_API).replace(/\/+$/, "");
+  return (env.GECKO_TERMINAL_API_URL?.trim() || DEFAULT_GECKO_API).replace(
+    /\/+$/,
+    "",
+  );
 }
 
 function isStoredState(value: unknown): value is RobinhoodAlphaStoredState {
@@ -876,7 +1217,8 @@ function isStoredState(value: unknown): value is RobinhoodAlphaStoredState {
   const candidate = value as Partial<RobinhoodAlphaStoredState>;
   return Boolean(
     candidate.snapshot &&
-      (candidate.snapshot.status === "ready" || candidate.snapshot.status === "provisional") &&
+      (candidate.snapshot.status === "ready" ||
+        candidate.snapshot.status === "provisional") &&
       Array.isArray(candidate.trades) &&
       Array.isArray(candidate.pools),
   );
@@ -991,5 +1333,7 @@ function short(value: string): string {
 }
 
 function safeError(error: unknown): string {
-  return error instanceof Error ? error.message.slice(0, 240) : "Unknown scanner failure";
+  return error instanceof Error
+    ? error.message.slice(0, 240)
+    : "Unknown scanner failure";
 }
