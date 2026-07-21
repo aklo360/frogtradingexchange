@@ -8,6 +8,10 @@ import { PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import { getTitanConfig, type Env } from "./env";
 import { getPlatformFeeConfig } from "./fees";
 import { fetchWalletsNftHoldings } from "./nftHoldings";
+import {
+  readRobinhoodAlphaStoreRequest,
+  writeRobinhoodAlphaStoreRequest,
+} from "./robinhoodAlpha";
 import { postQuotes, postSwap } from "./routes";
 
 const DEFAULT_PRIVY_API_BASE_URL = "https://api.privy.io/v1";
@@ -1365,6 +1369,7 @@ export async function getTradingBotConfig(env: Env): Promise<Response> {
       marketRiskEndpoint: "/api/frogx/trading-bot/market-risk",
       accountEndpoint: "/api/frogx/trading-bot/account",
       activityEndpoint: "/api/frogx/trading-bot/activity",
+      robinhoodAlphaEndpoint: "/api/frogx/trading-bot/robinhood-alpha",
       controlCodeEndpoint: "/api/frogx/trading-bot/control/code",
       controlSessionEndpoint: "/api/frogx/trading-bot/control/session",
       controlPreferencesEndpoint: "/api/frogx/trading-bot/control/preferences",
@@ -1551,6 +1556,10 @@ export async function getTradingBotConfig(env: Env): Promise<Response> {
         preferences: true,
         accountStorage: Boolean(env.TRADING_BOT_ACCOUNTS),
         activity: Boolean(env.TRADING_BOT_ACCOUNTS),
+        robinhoodAlphaSignals: Boolean(env.TRADING_BOT_ACCOUNTS),
+        robinhoodAlphaScannerEnabled: ["1", "true", "yes", "on"].includes(
+          env.ROBINHOOD_ALPHA_SCANNER_ENABLED?.trim().toLowerCase() ?? "",
+        ),
         controlCodes: Boolean(env.TRADING_BOT_ACCOUNTS),
         walletControls: Boolean(env.TRADING_BOT_ACCOUNTS),
         botAccessRevocation: Boolean(env.TRADING_BOT_ACCOUNTS),
@@ -6935,6 +6944,13 @@ export class TradingBotAccountStore {
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
+
+    if (url.pathname === "/robinhood-alpha-state" && request.method === "GET") {
+      return readRobinhoodAlphaStoreRequest(this.state);
+    }
+    if (url.pathname === "/robinhood-alpha-state" && request.method === "PUT") {
+      return writeRobinhoodAlphaStoreRequest(request, this.state);
+    }
 
     if (url.pathname === "/account" && request.method === "GET") {
       const telegramUserId = stringValue(

@@ -13,6 +13,10 @@ import {
 import { runBuyback } from "./buyback";
 import { getNftHoldings } from "./nftHoldings";
 import {
+  getRobinhoodAlphaSignals,
+  runRobinhoodAlphaScanner,
+} from "./robinhoodAlpha";
+import {
   getBuyback,
   getInfo,
   postBuybackBurn,
@@ -261,6 +265,12 @@ export default {
       request.method === "GET"
     ) {
       return getTradingBotActivity(request, env);
+    }
+    if (
+      url.pathname === "/api/frogx/trading-bot/robinhood-alpha" &&
+      request.method === "GET"
+    ) {
+      return getRobinhoodAlphaSignals(request, env);
     }
     if (
       url.pathname === "/api/frogx/trading-bot/operator/reviews" &&
@@ -631,6 +641,7 @@ export default {
     ctx.waitUntil(runAirdropPayout(env));
     ctx.waitUntil(runTradingBotScheduledOrders(env));
     ctx.waitUntil(runTradingBotAdvancedAutomationMonitors(env));
+    ctx.waitUntil(runRobinhoodAlphaScanner(env));
   },
 } satisfies ExportedHandler<Env>;
 
