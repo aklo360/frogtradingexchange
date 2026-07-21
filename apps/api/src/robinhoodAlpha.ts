@@ -603,7 +603,7 @@ export async function getRobinhoodAlphaSignals(
       warnings: ["No completed Robinhood Chain alpha scan is stored yet."],
     });
   }
-  return Response.json(state.snapshot);
+  return Response.json(sanitizePublicSnapshotAssets(state.snapshot));
 }
 
 export async function readRobinhoodAlphaStoreRequest(
@@ -1267,9 +1267,26 @@ function isExcludedVolumeToken(tokenAddress: string): boolean {
 function normalizeNativeEthPool(
   pool: RobinhoodAlphaPool,
 ): RobinhoodAlphaPool {
-  if (pool.tokenAddress.toLowerCase() !== NATIVE_ETH) return pool;
+  return normalizeNativeEthAsset(pool);
+}
+
+function normalizeNativeEthSignal<
+  T extends RobinhoodAlphaSignal | RobinhoodVolumeSignal,
+>(signal: T): T {
+  return normalizeNativeEthAsset(signal);
+}
+
+function normalizeNativeEthAsset<
+  T extends {
+    tokenAddress: string;
+    tokenName: string;
+    tokenSymbol: string;
+    explorerUrl: string;
+  },
+>(asset: T): T {
+  if (asset.tokenAddress.toLowerCase() !== NATIVE_ETH) return asset;
   return {
-    ...pool,
+    ...asset,
     tokenAddress: NATIVE_ETH,
     tokenName: "Ethereum",
     tokenSymbol: "ETH",
@@ -1277,16 +1294,37 @@ function normalizeNativeEthPool(
   };
 }
 
-function normalizeNativeEthSignal<
-  T extends RobinhoodAlphaSignal | RobinhoodVolumeSignal,
->(signal: T): T {
-  if (signal.tokenAddress.toLowerCase() !== NATIVE_ETH) return signal;
+function sanitizePublicSnapshotAssets(
+  snapshot: RobinhoodAlphaSnapshot,
+): RobinhoodAlphaSnapshot {
+  const signals = snapshot.signals
+    .filter((signal) => !isExcludedVolumeToken(signal.tokenAddress))
+    .map(normalizeNativeEthSignal);
+  const runnerPools = snapshot.runnerPools
+    .filter((pool) => !isExcludedVolumeToken(pool.tokenAddress))
+    .map(normalizeNativeEthPool);
+  const volumeLeaders = snapshot.volumeLeaders
+    .filter((leader) => !isExcludedVolumeToken(leader.tokenAddress))
+    .map((leader, index) => ({
+      ...normalizeNativeEthAsset(leader),
+      rank: index + 1,
+    }));
+  const volumeSignals = snapshot.volumeSignals
+    .filter((signal) => !isExcludedVolumeToken(signal.tokenAddress))
+    .map(normalizeNativeEthSignal);
   return {
-    ...signal,
-    tokenAddress: NATIVE_ETH,
-    tokenName: "Ethereum",
-    tokenSymbol: "ETH",
-    explorerUrl: "https://robinhoodchain.blockscout.com/",
+    ...snapshot,
+    summary: {
+      ...snapshot.summary,
+      runnerPools: runnerPools.length,
+      recentSignals: signals.length,
+      volumeLeaders: volumeLeaders.length,
+      recentVolumeSignals: volumeSignals.length,
+    },
+    signals,
+    runnerPools,
+    volumeLeaders,
+    volumeSignals,
   };
 }
 

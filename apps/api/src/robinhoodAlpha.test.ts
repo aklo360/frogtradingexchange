@@ -416,6 +416,56 @@ describe("Robinhood Chain alpha API and scheduling", () => {
     expect(body).not.toHaveProperty("trades");
   });
 
+  it("sanitizes excluded assets from a retained pre-policy snapshot", async () => {
+    const fixture = convergenceFixture(4);
+    const stored = buildRobinhoodAlphaSnapshot({
+      now: NOW,
+      config: getRobinhoodAlphaConfig({}),
+      pools: fixture.pools,
+      trades: fixture.trades,
+    });
+    stored.snapshot.signals[0] = {
+      ...stored.snapshot.signals[0],
+      tokenAddress: "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      tokenSymbol: "WETH",
+    };
+    stored.snapshot.volumeLeaders[0] = {
+      ...stored.snapshot.volumeLeaders[0],
+      tokenAddress: "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      tokenSymbol: "USDG",
+    };
+    stored.snapshot.volumeSignals[0] = {
+      ...stored.snapshot.volumeSignals[0],
+      tokenAddress: "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      tokenSymbol: "USDG",
+    };
+    const env: Env = {
+      RIBBOT_TRADING_BOT_TOKEN: "secret",
+      TRADING_BOT_ACCOUNTS: namespace(() =>
+        Response.json({ status: "ready", state: stored }),
+      ),
+    };
+
+    const response = await getRobinhoodAlphaSignals(
+      new Request(
+        "https://frogx.example/api/frogx/trading-bot/robinhood-alpha",
+        { headers: { Authorization: "Bearer secret" } },
+      ),
+      env,
+    );
+    const body = (await response.json()) as RobinhoodAlphaStoredState["snapshot"];
+    const symbols = [
+      ...body.signals,
+      ...body.volumeLeaders,
+      ...body.volumeSignals,
+    ].map((item) => item.tokenSymbol);
+
+    expect(response.status).toBe(200);
+    expect(symbols).not.toContain("USDG");
+    expect(symbols).not.toContain("WETH");
+    expect(body.volumeLeaders[0].rank).toBe(1);
+  });
+
   it("is a no-op while the operator scanner gate is disabled", async () => {
     const fetcher = vi.fn();
     await runRobinhoodAlphaScanner(
