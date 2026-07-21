@@ -304,4 +304,41 @@ describe("Robinhood Chain alpha API and scheduling", () => {
     expect(stored.snapshot.lastError).toBe("market data unavailable");
     expect(stored.snapshot.warnings.join(" ")).toContain("last good scanner snapshot");
   });
+
+  it("backs off after a GeckoTerminal 429 and serializes pool discovery", async () => {
+    let stored: RobinhoodAlphaStoredState | undefined;
+    const env: Env = {
+      ROBINHOOD_ALPHA_SCANNER_ENABLED: "true",
+      TRADING_BOT_ACCOUNTS: namespace(async (request) => {
+        if (request.method === "PUT") {
+          stored = (await request.json()) as RobinhoodAlphaStoredState;
+          return Response.json({ status: "ready" });
+        }
+        return Response.json({ status: "not_found" }, { status: 404 });
+      }),
+    };
+    const marketFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json(
+          { error: "rate limited" },
+          { status: 429, headers: { "Retry-After": "0" } },
+        ),
+      )
+      .mockResolvedValueOnce(Response.json({ data: [] }))
+      .mockResolvedValueOnce(Response.json({ data: [] }));
+    const pause = vi.fn(async (_milliseconds: number) => undefined);
+
+    await runRobinhoodAlphaScanner(env, {
+      fetch: marketFetch,
+      now: () => NOW,
+      sleep: pause,
+      requestIntervalMs: 1,
+    });
+
+    expect(marketFetch).toHaveBeenCalledTimes(3);
+    expect(pause).toHaveBeenNthCalledWith(1, 0);
+    expect(pause).toHaveBeenNthCalledWith(2, 1);
+    expect(stored?.snapshot.status).toBe("provisional");
+  });
 });

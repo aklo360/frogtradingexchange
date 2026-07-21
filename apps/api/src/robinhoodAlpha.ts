@@ -10,6 +10,8 @@ const HISTORY_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const FRESH_POOL_MS = 24 * 60 * 60 * 1000;
 const MAX_STORED_TRADES = 12_000;
 const MAX_SIGNALS = 50;
+const GECKO_REQUEST_INTERVAL_MS = 2_500;
+const GECKO_MAX_ATTEMPTS = 4;
 
 export type RobinhoodAlphaConfig = {
   scanIntervalMinutes: number;
@@ -157,6 +159,8 @@ type GeckoTradeResource = {
 type ScannerDependencies = {
   fetch?: typeof fetch;
   now?: () => Date;
+  sleep?: (milliseconds: number) => Promise<void>;
+  requestIntervalMs?: number;
 };
 
 type BuildSnapshotInput = {
@@ -165,6 +169,7 @@ type BuildSnapshotInput = {
   pools: RobinhoodAlphaPool[];
   trades: RobinhoodAlphaTrade[];
   previous?: RobinhoodAlphaStoredState | null;
+  ingestionWarnings?: string[];
 };
 
 type TokenPosition = {
@@ -329,6 +334,7 @@ export function buildRobinhoodAlphaSnapshot(
     "Read-only research signal; no Robinhood Chain transaction is built, signed, or sent.",
     "Wallet returns are estimates from observed DEX trades and current pool prices, not audited tax-lot PNL.",
     "Copy/farm rejection is behavioral; shared-funder bundler detection remains unverified without archive funding-graph enrichment.",
+    ...(input.ingestionWarnings ?? []),
     ...(provisional
       ? [
           `The rolling window currently contains ${observedHistoryDays.toFixed(1)} observed days, not a full 30-day sample.`,
@@ -384,17 +390,37 @@ export async function runRobinhoodAlphaScanner(
 
   const config = getRobinhoodAlphaConfig(env);
   const fetcher = dependencies.fetch ?? fetch;
+  const geckoRequest = createGeckoRequester({
+    fetcher,
+    sleep: dependencies.sleep ?? sleep,
+    requestIntervalMs:
+      dependencies.requestIntervalMs ?? GECKO_REQUEST_INTERVAL_MS,
+  });
   try {
-    const pools = await fetchRunnerPools(env, config, fetcher);
-    const tradeGroups = await Promise.all(
-      pools.map((pool) => fetchPoolTrades(env, pool, fetcher)),
-    );
+    const pools = await fetchRunnerPools(env, config, geckoRequest);
+    const trades: RobinhoodAlphaTrade[] = [];
+    const ingestionWarnings: string[] = [];
+    let successfulPoolReads = 0;
+    for (const pool of pools) {
+      try {
+        trades.push(...(await fetchPoolTrades(env, pool, geckoRequest)));
+        successfulPoolReads += 1;
+      } catch (error) {
+        ingestionWarnings.push(
+          `Skipped ${pool.tokenSymbol} pool trades during this refresh: ${safeError(error)}.`,
+        );
+      }
+    }
+    if (pools.length > 0 && successfulPoolReads === 0) {
+      throw new Error("Every selected GeckoTerminal pool trade request failed");
+    }
     const state = buildRobinhoodAlphaSnapshot({
       now,
       config,
       pools,
-      trades: tradeGroups.flat(),
+      trades,
       previous,
+      ingestionWarnings,
     });
     await writeStoredState(store, state);
   } catch (error) {
@@ -487,21 +513,18 @@ export async function writeRobinhoodAlphaStoreRequest(
 async function fetchRunnerPools(
   env: Env,
   config: RobinhoodAlphaConfig,
-  fetcher: typeof fetch,
+  requestJson: GeckoRequest,
 ): Promise<RobinhoodAlphaPool[]> {
   const base = geckoBase(env);
   const urls = [
     `${base}/networks/${CHAIN}/trending_pools?page=1`,
     `${base}/networks/${CHAIN}/new_pools?page=1`,
   ];
-  const responses = await Promise.all(
-    urls.map(async (url) => {
-      const response = await fetcher(url, { headers: { Accept: "application/json" } });
-      if (!response.ok) throw new Error(`GeckoTerminal pools failed with status ${response.status}`);
-      const data = (await response.json()) as { data?: GeckoPoolResource[] };
-      return data.data ?? [];
-    }),
-  );
+  const responses: GeckoPoolResource[][] = [];
+  for (const url of urls) {
+    const data = await requestJson<{ data?: GeckoPoolResource[] }>(url);
+    responses.push(data.data ?? []);
+  }
   const pools = responses
     .flat()
     .map(parsePool)
@@ -521,16 +544,11 @@ async function fetchRunnerPools(
 async function fetchPoolTrades(
   env: Env,
   pool: RobinhoodAlphaPool,
-  fetcher: typeof fetch,
+  requestJson: GeckoRequest,
 ): Promise<RobinhoodAlphaTrade[]> {
-  const response = await fetcher(
+  const data = await requestJson<{ data?: GeckoTradeResource[] }>(
     `${geckoBase(env)}/networks/${CHAIN}/pools/${pool.poolAddress}/trades`,
-    { headers: { Accept: "application/json" } },
   );
-  if (!response.ok) {
-    throw new Error(`GeckoTerminal trades failed with status ${response.status}`);
-  }
-  const data = (await response.json()) as { data?: GeckoTradeResource[] };
   const parsed = (data.data ?? [])
     .map((resource) => parseTrade(resource, pool))
     .filter((trade): trade is RobinhoodAlphaTrade => Boolean(trade));
@@ -549,6 +567,53 @@ async function fetchPoolTrades(
       .map(([wallet]) => wallet),
   );
   return parsed.filter((trade) => topWallets.has(trade.walletAddress));
+}
+
+type GeckoRequest = <T>(url: string) => Promise<T>;
+
+function createGeckoRequester(input: {
+  fetcher: typeof fetch;
+  sleep: (milliseconds: number) => Promise<void>;
+  requestIntervalMs: number;
+}): GeckoRequest {
+  let requested = false;
+  return async <T>(url: string): Promise<T> => {
+    if (requested && input.requestIntervalMs > 0) {
+      await input.sleep(input.requestIntervalMs);
+    }
+    requested = true;
+
+    for (let attempt = 1; attempt <= GECKO_MAX_ATTEMPTS; attempt += 1) {
+      const response = await input.fetcher(url, {
+        headers: { Accept: "application/json" },
+      });
+      if (response.ok) return (await response.json()) as T;
+
+      const status = response.status;
+      const retryable = status === 429 || status >= 500;
+      const retryAfterMs = parseRetryAfter(response.headers.get("Retry-After"));
+      await response.body?.cancel().catch(() => undefined);
+      if (!retryable || attempt === GECKO_MAX_ATTEMPTS) {
+        throw new Error(`GeckoTerminal request failed with status ${status}`);
+      }
+      await input.sleep(
+        retryAfterMs ?? Math.max(5_000, input.requestIntervalMs * 2 ** attempt),
+      );
+    }
+    throw new Error("GeckoTerminal request exhausted retries");
+  };
+}
+
+function parseRetryAfter(value: string | null): number | null {
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1_000;
+  const date = Date.parse(value);
+  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : null;
+}
+
+function sleep(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function parsePool(resource: GeckoPoolResource): RobinhoodAlphaPool | null {
