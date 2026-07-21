@@ -8,6 +8,6 @@ Business Frog holdings are FTX-owned and independent of social providers. Public
 
 FTX owns settings, presets/fees, protection, automation opt-ins, Instant Auto Buy, copytrade state, execution locks, and reconciliation. Every live path requires false-by-default gates, account opt-in, a matching managed wallet, signer config, no revocation, and RPC/risk checks. Ambiguous sends stay locked; wallet/chain-validated GET-only reconciliation never resends.
 
-FTX also owns Ribbot's read-only Robinhood Chain alpha data. The false-by-default scanner samples bounded GeckoTerminal runner pools/trades, keeps a rolling 30-day snapshot in the global trading-bot Durable Object, and exposes only the public snapshot through authenticated `/api/frogx/trading-bot/robinhood-alpha`. It has no wallet, Privy, swap, or execution path. Under 30 observed days remains provisional; shared-funder bundler detection is not yet verified.
+FTX also owns Ribbot's read-only Robinhood Chain alpha data. The scanner is false by default; its production-only override was approved and enabled on 2026-07-20. It samples rate-limited GeckoTerminal runners/trades, keeps a rolling 30-day Durable Object snapshot, and exposes only public results through authenticated `/api/frogx/trading-bot/robinhood-alpha`. It has no wallet, Privy, swap, or execution path. Under 30 observed days remains provisional; shared-funder bundler detection is not yet verified.
 
 Referral payouts do not exist. PNL has no realized/FIFO accounting. Production Ribbot is the standalone LaunchAgent; do not restart Eliza.
