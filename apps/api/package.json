@@ -7,10 +7,14 @@
     "dev": "node ../../scripts/dev-worker.mjs",
     "build": "echo \"Workers built by wrangler\"",
     "deploy": "wrangler deploy",
-    "test": "vitest run"
+    "test": "vitest run",
+    "account:check": "node scripts/check-account-readiness.mjs",
+    "secret:put": "node scripts/put-cloudflare-secret.mjs",
+    "tensor:check": "node scripts/check-tensor-api-key.mjs"
   },
   "dependencies": {
     "@noble/ed25519": "^3.1.0",
+    "@privy-io/node": "^0.22.0",
     "@solana/spl-token": "^0.4.14",
     "@solana/web3.js": "^1.98.0",
     "bs58": "^6.0.0",

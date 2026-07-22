@@ -1,11 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
-import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
-import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
-import { PhantomWalletAdapter, SolflareWalletAdapter } from "@solana/wallet-adapter-wallets";
-
-import "@solana/wallet-adapter-react-ui/styles.css";
+import { ConnectionProvider } from "@solana/wallet-adapter-react";
 
 type Props = {
   children: React.ReactNode;
@@ -28,16 +23,9 @@ export const SolanaProvider = ({ children }: Props) => {
         ? `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/rpc`
         : undefined);
 
-  const wallets = useMemo(
-    () => [new PhantomWalletAdapter(), new SolflareWalletAdapter()],
-    [],
-  );
-
   return (
     <ConnectionProvider endpoint={endpoint} config={{ commitment: "processed", wsEndpoint }}>
-      <WalletProvider wallets={wallets} autoConnect>
-        <WalletModalProvider>{children}</WalletModalProvider>
-      </WalletProvider>
+      {children}
     </ConnectionProvider>
   );
 };

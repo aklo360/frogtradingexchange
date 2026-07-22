@@ -1,19 +1,22 @@
 "use client";
 
-import { Buffer } from "buffer";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { useWallet, useConnection } from "@solana/wallet-adapter-react";
-import { useWalletModal } from "@solana/wallet-adapter-react-ui";
+import { usePrivy } from "@privy-io/react-auth";
+import {
+  useSignTransaction,
+  useWallets as usePrivySolanaWallets,
+} from "@privy-io/react-auth/solana";
+import { useConnection } from "@solana/wallet-adapter-react";
 import {
   AddressLookupTableAccount,
   LAMPORTS_PER_SOL,
   PublicKey,
-  type RpcResponseAndContext,
-  type SignatureResult,
   TransactionInstruction,
   TransactionMessage,
   VersionedTransaction,
+  type RpcResponseAndContext,
+  type SignatureResult,
 } from "@solana/web3.js";
 import {
   normalizeQuotePreview,
@@ -22,6 +25,7 @@ import {
   type QuotePreviewResponse,
 } from "@/lib/hooks/useQuotePreview";
 import { buildApiUrl } from "@/lib/api";
+import { serializeVersionedTransaction } from "@/lib/solana/serializeVersionedTransaction";
 import { toBaseUnits } from "@/lib/solana/validation";
 import type { TokenOption } from "@/lib/tokens";
 import {
@@ -30,6 +34,12 @@ import {
 } from "@/lib/tokens";
 import { TokenSelector } from "./TokenSelector";
 import styles from "./SwapCard.module.css";
+
+type SwapBuildResponse = {
+  mode?: "tx_base64" | "route";
+  txBase64?: string | null;
+  error?: string;
+};
 
 type QuoteInstructionAccount = {
   pubkey: string;
@@ -94,11 +104,30 @@ export const SwapCard = () => {
   };
 
   const { connection } = useConnection();
-  const { connected, publicKey, disconnect, disconnecting, sendTransaction } =
-    useWallet();
-  const { setVisible } = useWalletModal();
+  const { authenticated, linkWallet, login, logout } = usePrivy();
+  const { wallets: privySolanaWallets } = usePrivySolanaWallets();
+  const { signTransaction } = useSignTransaction();
 
-  const walletConnected = Boolean(connected && publicKey);
+  type PrivySolanaWallet = (typeof privySolanaWallets)[number];
+
+  const isFrogxWallet = (wallet: PrivySolanaWallet) =>
+    wallet.standardWallet.name.toLowerCase().includes("privy");
+
+  const swapWallet =
+    privySolanaWallets.find((wallet) => !isFrogxWallet(wallet)) ??
+    privySolanaWallets.find(isFrogxWallet) ??
+    null;
+
+  const publicKey = useMemo(() => {
+    if (!swapWallet?.address) return null;
+    try {
+      return new PublicKey(swapWallet.address);
+    } catch {
+      return null;
+    }
+  }, [swapWallet?.address]);
+
+  const walletConnected = Boolean(authenticated && swapWallet && publicKey);
   const publicKeyBase58 = publicKey?.toBase58();
 
   const parsedAmount = Number(amountIn);
@@ -336,7 +365,7 @@ export const SwapCard = () => {
         isSigner: account.isSigner,
         isWritable: account.isWritable,
       })),
-      data: Buffer.from(instruction.data, "base64"),
+      data: decodeBase64ToUint8Array(instruction.data) as unknown as Buffer,
     });
 
   const loadLookupTables = async (addresses: string[]) => {
@@ -394,29 +423,74 @@ export const SwapCard = () => {
     return freshQuote;
   };
 
-  const buildTransactionFromInstructions = async (executableQuote: QuotePreview) => {
+  const buildTransactionFromInstructions = async (
+    executableQuote: QuotePreview,
+  ) => {
     if (!executableQuote.instructions?.length || !publicKey) {
       throw new Error("Quote missing route instructions");
     }
 
     const instructionList =
-      executableQuote.instructions?.map(toTransactionInstruction) ?? [];
+      executableQuote.instructions.map(toTransactionInstruction);
     const lookupTables = await loadLookupTables(
       executableQuote.addressLookupTables ?? [],
     );
-    const { blockhash, lastValidBlockHeight } =
-      await connection.getLatestBlockhash("finalized");
+    const { blockhash } = await connection.getLatestBlockhash("finalized");
     const message = new TransactionMessage({
       payerKey: publicKey,
       recentBlockhash: blockhash,
       instructions: instructionList,
     }).compileToV0Message(lookupTables);
 
-    return {
-      transaction: new VersionedTransaction(message),
-      blockhash,
-      lastValidBlockHeight,
-    };
+    return serializeVersionedTransaction(new VersionedTransaction(message));
+  };
+
+  const buildExecutableSwapFromFreshQuote = async () => {
+    const executableQuote = await fetchExecutableQuote();
+
+    if (executableQuote.transactionBase64) {
+      return decodeBase64ToUint8Array(executableQuote.transactionBase64);
+    }
+
+    return buildTransactionFromInstructions(executableQuote);
+  };
+
+  const fetchExecutableSwap = async (): Promise<Uint8Array> => {
+    if (!publicKeyBase58) {
+      throw new Error("Wallet public key missing");
+    }
+
+    const response = await fetch(buildApiUrl("/api/frogx/swap"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userPubkey: publicKeyBase58,
+        inMint: fromToken.mint,
+        outMint: toToken.mint,
+        amountIn: amountInBaseUnits,
+        slippageBps: DEFAULT_SLIPPAGE_BPS,
+        priorityFee: DEFAULT_PRIORITY_FEE,
+      }),
+    });
+
+    const payload = (await response.json().catch(() => null)) as
+      | SwapBuildResponse
+      | null;
+
+    if (!response.ok) {
+      if (response.status === 404 || response.status === 502) {
+        return buildExecutableSwapFromFreshQuote();
+      }
+      throw new Error(
+        payload?.error ?? `Swap build failed with status ${response.status}`,
+      );
+    }
+
+    if (payload?.mode !== "tx_base64" || !payload.txBase64) {
+      return buildExecutableSwapFromFreshQuote();
+    }
+
+    return decodeBase64ToUint8Array(payload.txBase64);
   };
 
   const handleSwitchTokens = () => {
@@ -482,19 +556,26 @@ export const SwapCard = () => {
 
   const hasExecutableQuote = Boolean(
     walletConnected &&
-      quoteData &&
-      (quoteData.transactionBase64 ||
-        (quoteData.instructions?.length ?? 0) > 0),
+      quoteData?.executable &&
+      Number(quoteData.amountOut) > 0,
   );
 
   const handleSwap = async () => {
-    if (!walletConnected) {
-      setVisible(true);
+    if (!authenticated) {
+      login();
       return;
     }
 
-    if (!publicKey || !sendTransaction) {
-      setSwapError("Wallet does not support sending transactions");
+    if (!swapWallet) {
+      linkWallet({
+        walletChainType: "solana-only",
+        description: "Connect Phantom or another Solana wallet to swap.",
+      });
+      return;
+    }
+
+    if (!publicKey) {
+      setSwapError("Connected Solana wallet public key is invalid");
       return;
     }
 
@@ -507,38 +588,25 @@ export const SwapCard = () => {
       setIsSwapping(true);
       setSwapError(null);
 
-      let transaction: VersionedTransaction;
-      let confirmationParams: { blockhash: string; lastValidBlockHeight: number } | null =
-        null;
+      const serializedTransaction = await fetchExecutableSwap();
 
-      const executableQuote = await fetchExecutableQuote();
+      const { signedTransaction } = await signTransaction({
+        transaction: serializedTransaction,
+        wallet: swapWallet,
+        chain: "solana:mainnet",
+        options: {
+          uiOptions: {
+            description: `Sign this FTX swap with ${swapWallet.standardWallet.name}.`,
+            showWalletUIs: true,
+          },
+        },
+      });
 
-      if (executableQuote.transactionBase64) {
-        const bytes = decodeBase64ToUint8Array(executableQuote.transactionBase64);
-        transaction = VersionedTransaction.deserialize(bytes);
-      } else {
-        const built = await buildTransactionFromInstructions(executableQuote);
-        transaction = built.transaction;
-        confirmationParams = {
-          blockhash: built.blockhash,
-          lastValidBlockHeight: built.lastValidBlockHeight,
-        };
-      }
-
-      const signature = await sendTransaction(transaction, connection, {
+      const signature = await connection.sendRawTransaction(signedTransaction, {
         skipPreflight: false,
       });
 
-      const confirmation = confirmationParams
-        ? await connection.confirmTransaction(
-          {
-            signature,
-            blockhash: confirmationParams.blockhash,
-            lastValidBlockHeight: confirmationParams.lastValidBlockHeight,
-          },
-          "confirmed",
-        )
-        : await connection.confirmTransaction(signature, "confirmed");
+      const confirmation = await connection.confirmTransaction(signature, "confirmed");
 
       assertConfirmedSwap(confirmation);
 
@@ -554,7 +622,10 @@ export const SwapCard = () => {
   };
 
   const primaryActionLabel = (() => {
-    if (!walletConnected) return "Connect Wallet";
+    if (!authenticated) return "Account Login";
+    if (!swapWallet || !publicKey) {
+      return "Connect Solana wallet";
+    }
     if (isSwapping) return "Swapping...";
     if (hasExecutableQuote) return "Swap";
     if (quoteState.status === "loading") return "Fetching quote...";
@@ -566,8 +637,13 @@ export const SwapCard = () => {
     : false;
 
   const handlePrimaryAction = () => {
-    if (!walletConnected) {
-      setVisible(true);
+    if (!authenticated) {
+      login();
+      return;
+    }
+
+    if (!swapWallet || !publicKey) {
+      void handleSwap();
       return;
     }
 
@@ -633,10 +709,10 @@ export const SwapCard = () => {
             <button
               type="button"
               className={styles.disconnectButton}
-              onClick={() => void disconnect()}
-              disabled={disconnecting}
+              onClick={() => void logout()}
+              disabled={isSwapping}
             >
-              Disconnect
+              Logout
             </button>
           )}
         </div>
@@ -812,7 +888,7 @@ export const SwapCard = () => {
         className={styles.swapButton}
         type="button"
         onClick={handlePrimaryAction}
-        disabled={primaryActionDisabled || disconnecting}
+        disabled={primaryActionDisabled}
       >
         {primaryActionLabel}
       </button>

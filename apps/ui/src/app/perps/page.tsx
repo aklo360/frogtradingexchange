@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { usePrivy } from "@privy-io/react-auth";
 import {
   CandlestickSeries,
   ColorType,
@@ -311,7 +311,7 @@ const getFundingForSide = (row: FundingRow | undefined, venue: DataVenue | null,
 
 export default function PerpsPage() {
   const router = useRouter();
-  const { connected } = useWallet();
+  const { authenticated } = usePrivy();
   const { muted, toggleMuted } = useAudio();
   const [menuOpen, setMenuOpen] = useState(false);
   const [snapshot, setSnapshot] = useState<MarketSnapshot>({
@@ -592,7 +592,7 @@ export default function PerpsPage() {
           </button>
         </div>
         <div className={homeStyles.rightControls}>
-          {connected && !isV1 ? (
+          {authenticated && !isV1 ? (
             <div className={homeStyles.xpChip} aria-label="Your XP">
               <span className={homeStyles.xpValue}>4,269 XP</span>
               <img src="/sparkle.svg" alt="" className={homeStyles.sparkleIcon} />
@@ -650,6 +650,17 @@ export default function PerpsPage() {
                 className={`${homeStyles.menuIcon} ${homeStyles.pixelIcon}`}
               />
               <span>PERPS</span>
+            </button>
+            <button
+              type="button"
+              className={homeStyles.menuItem}
+              onClick={() => {
+                closeMenu();
+                router.push("/profile");
+              }}
+            >
+              <img src="/bank.svg" alt="" className={homeStyles.menuIcon} />
+              <span>PROFILE</span>
             </button>
             <button
               type="button"
@@ -891,11 +902,11 @@ export default function PerpsPage() {
           <div className={styles.positionsPanel}>
             <div className={styles.panelHeader}>
               <h3>Positions</h3>
-              <span>{connected ? "WALLET" : "OFF"}</span>
+              <span>{authenticated ? "ACCOUNT" : "OFF"}</span>
             </div>
             <div className={styles.emptyState}>
               <span>No open perps positions</span>
-              <strong>{connected ? "Profile 0" : "Connect wallet"}</strong>
+              <strong>{authenticated ? "Profile 0" : "Account login"}</strong>
             </div>
           </div>
         </section>

@@ -243,16 +243,31 @@ export async function postQuotes(request: Request, env: Env): Promise<Response> 
 }
 
 type SwapBuildPayload = {
-  userPubkey: string;
-  inMint: string;
-  outMint: string;
-  amountIn: string;
-  slippageBps: number;
-  priorityFee: number;
+  userPubkey?: string;
+  userPublicKey?: string;
+  inMint?: string;
+  outMint?: string;
+  amountIn?: string;
+  slippageBps?: number;
+  priorityFee?: number;
   feeBps?: number;
   feeFromInputMint?: boolean;
   feeAccount?: string;
 };
+
+const getRequiredString = (
+  payload: SwapBuildPayload,
+  field: "userPubkey" | "inMint" | "outMint" | "amountIn",
+) => {
+  const value =
+    field === "userPubkey"
+      ? payload.userPubkey ?? payload.userPublicKey
+      : payload[field];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+};
+
+const normalizeNumber = (value: unknown, fallback: number) =>
+  typeof value === "number" && Number.isFinite(value) ? value : fallback;
 
 export async function postSwap(request: Request, env: Env): Promise<Response> {
   const config = getTitanConfig(env);
@@ -268,17 +283,36 @@ export async function postSwap(request: Request, env: Env): Promise<Response> {
     return json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  const userPubkey = getRequiredString(payload, "userPubkey");
+  const inMint = getRequiredString(payload, "inMint");
+  const outMint = getRequiredString(payload, "outMint");
+  const amountIn = getRequiredString(payload, "amountIn");
+
+  if (!userPubkey || !inMint || !outMint || !amountIn) {
+    return json(
+      {
+        error:
+          "userPubkey, inMint, outMint, and amountIn are required for swap execution",
+      },
+      { status: 400 },
+    );
+  }
+
+  const swapBody = {
+    userPubkey,
+    inMint,
+    outMint,
+    amountIn,
+    slippageBps: normalizeNumber(payload.slippageBps, 0),
+    priorityFee: normalizeNumber(payload.priorityFee, 0),
+  };
+
   if (!config.token) {
     return json(
       {
-        mode: "tx_base64",
-        txBase64: "BASE64_TX_PLACEHOLDER",
-        meta: {
-          mock: true,
-          message: "Titan token missing; returning sample transaction.",
-        },
+        error: "Swap execution requires Titan credentials",
       },
-      { status: 200 },
+      { status: 503 },
     );
   }
 
@@ -290,20 +324,9 @@ export async function postSwap(request: Request, env: Env): Promise<Response> {
     ? await validatePlatformFeeResolution(
         env,
         feeConfig,
-        resolvePlatformFee(feeConfig, payload.inMint, payload.outMint),
+        resolvePlatformFee(feeConfig, inMint, outMint),
       )
     : null;
-
-  const swapBody = {
-    ...payload,
-    ...(usePlatformFee && feeResolution
-      ? {
-          feeBps: feeResolution.feeBps,
-          feeFromInputMint: feeResolution.feeFromInputMint,
-          feeAccount: feeResolution.feeAccount,
-        }
-      : {}),
-  };
 
   const response = await fetch(url, {
     method: "POST",
@@ -311,7 +334,16 @@ export async function postSwap(request: Request, env: Env): Promise<Response> {
       "Content-Type": "application/json",
       Authorization: `Bearer ${config.token}`,
     },
-    body: JSON.stringify(swapBody),
+    body: JSON.stringify({
+      ...swapBody,
+      ...(usePlatformFee && feeResolution
+        ? {
+            feeBps: feeResolution.feeBps,
+            feeFromInputMint: feeResolution.feeFromInputMint,
+            feeAccount: feeResolution.feeAccount,
+          }
+        : {}),
+    }),
   });
 
   if (!response.ok) {

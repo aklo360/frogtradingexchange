@@ -1,6 +1,7 @@
 name = "frogx-api"
 main = "src/index.ts"
 compatibility_date = "2025-10-09"
+compatibility_flags = ["nodejs_compat"]
 
 [vars]
 TITAN_ENV = "demo"
@@ -32,6 +33,22 @@ AIRDROP_PAYOUT_ENABLED = "true"
 AIRDROP_AUTO_PAYOUT_ENABLED = "true"
 AIRDROP_PAYOUT_BATCH_SIZE = "10"
 AIRDROP_PAYOUT_WAIT_FOR_RECEIPTS = "false"
+FROGX_ACCOUNT_MODE_ENABLED = "true"
+FROGX_BOT_TRADING_ENABLED = "true"
+FROGX_BOT_EXECUTION_ENABLED = "true"
+FROGX_BOT_MAX_TRADE_SOL = "0.25"
+FROGX_BOT_DAILY_SPEND_SOL = "1"
+FROGX_BOT_MAX_SLIPPAGE_BPS = "100"
+FROGX_BOT_INTENT_TTL_SECONDS = "120"
+FROGX_NFT_MAX_SWEEP_QUANTITY = "10"
+FROGX_NFT_SWEEP_ITEM_DELAY_MS = "2500"
+FROGX_NFT_MAX_TOTAL_SOL = "1"
+FROGX_NFT_PREFLIGHT_ENABLED = "true"
+FROGX_NFT_PREFLIGHT_SCAN_LIMIT = "50"
+FROGX_NFT_LISTING_SCAN_LIMIT = "600"
+PRIVY_APP_ID = "cmqhok8w0007y0cjo5znwyvt5"
+NEXT_PUBLIC_PRIVY_APP_ID = "cmqhok8w0007y0cjo5znwyvt5"
+PRIVY_JWKS_URL = "https://auth.privy.io/api/v1/apps/cmqhok8w0007y0cjo5znwyvt5/jwks.json"
 
 [[durable_objects.bindings]]
 name = "AIRDROP_COORDINATOR"

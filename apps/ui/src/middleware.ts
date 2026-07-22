@@ -32,7 +32,7 @@ export function middleware() {
   const csp = [
     "default-src 'self'",
     // Allow scripts from self, inline (needed for Next.js), and eval for WASM
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://auth.privy.io https://telegram.org",
     // Allow styles from self and inline (needed for CSS-in-JS)
     "style-src 'self' 'unsafe-inline'",
     // Allow images from self, data URIs, and HTTPS sources (NFT metadata)
@@ -44,7 +44,7 @@ export function middleware() {
     // Allow media from self and HTTPS
     "media-src 'self' https: blob:",
     // Allow the embedded GMGN kline chart on the perps terminal
-    "frame-src 'self' https://www.gmgn.cc",
+    "frame-src 'self' https://auth.privy.io https://www.gmgn.cc https://oauth.telegram.org",
     // Prevent embedding in frames
     "frame-ancestors 'none'",
     // Block object/embed/applet

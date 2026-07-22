@@ -8,14 +8,14 @@ import { WalletButton } from "@/components/WalletButton";
 import { Ticker } from "@/components/Ticker";
 import { useAudio } from "@/providers/AudioProvider";
 import { isV1 } from "@/lib/version";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { usePrivy } from "@privy-io/react-auth";
 import styles from "./page.module.css";
 
 export default function Home() {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const { muted, toggleMuted } = useAudio();
-  const { connected } = useWallet();
+  const { authenticated } = usePrivy();
 
   const toggleMenu = () => setMenuOpen((open) => !open);
   const closeMenu = () => setMenuOpen(false);
@@ -80,7 +80,7 @@ export default function Home() {
           </button>
         </div>
         <div className={styles.rightControls}>
-          {connected && !isV1 ? (
+          {authenticated && !isV1 ? (
             <div className={styles.xpChip} aria-label="Your XP">
               <span className={styles.xpValue}>4,269 XP</span>
               <img src="/sparkle.svg" alt="" className={styles.sparkleIcon} />
@@ -146,23 +146,21 @@ export default function Home() {
               />
               <span>AIRDROP</span>
             </button>
-            {connected && !isV1 ? (
-              <button
-                type="button"
-                className={styles.menuItem}
-                onClick={() => {
-                  closeMenu();
-                  router.push("/profile");
-                }}
-              >
-                <img
-                  src="/bank.svg"
-                  alt=""
-                  className={styles.menuIcon}
-                />
-                <span>PROFILE</span>
-              </button>
-            ) : null}
+            <button
+              type="button"
+              className={styles.menuItem}
+              onClick={() => {
+                closeMenu();
+                router.push("/profile");
+              }}
+            >
+              <img
+                src="/bank.svg"
+                alt=""
+                className={styles.menuIcon}
+              />
+              <span>PROFILE</span>
+            </button>
             {!isV1 ? (
               <button
                 type="button"

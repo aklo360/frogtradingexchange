@@ -2,10 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { FrogxAccountPanel } from "@/components/FrogxAccountPanel";
 import { WalletButton } from "@/components/WalletButton";
 import { Ticker } from "@/components/Ticker";
 import { useAudio } from "@/providers/AudioProvider";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { usePrivy } from "@privy-io/react-auth";
+import { useWallets as usePrivySolanaWallets } from "@privy-io/react-auth/solana";
 import { isV1 } from "@/lib/version";
 import type { AppProfileResponse } from "@/lib/tapestry/types";
 import {
@@ -46,11 +48,22 @@ const profileCache = new Map<string, AppProfileResponse>();
 export default function ProfilePage() {
   const router = useRouter();
   const { muted, toggleMuted } = useAudio();
-  const { publicKey, connected } = useWallet();
-  const walletAddress = useMemo(
-    () => publicKey?.toBase58() ?? "",
-    [publicKey],
+  const { authenticated } = usePrivy();
+  const { wallets: privySolanaWallets } = usePrivySolanaWallets();
+  const profileWallet = useMemo(
+    () =>
+      privySolanaWallets.find(
+        (wallet) => !wallet.standardWallet.name.toLowerCase().includes("privy"),
+      ) ??
+      privySolanaWallets[0] ??
+      null,
+    [privySolanaWallets],
   );
+  const walletAddress = useMemo(
+    () => (authenticated ? profileWallet?.address ?? "" : ""),
+    [authenticated, profileWallet?.address],
+  );
+  const connected = Boolean(walletAddress);
 
   const [profileData, setProfileData] = useState<AppProfileResponse | null>(
     null,
@@ -79,11 +92,6 @@ export default function ProfilePage() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [menuOpen]);
-
-  useEffect(() => {
-    if (!isV1) return;
-    router.replace("/");
-  }, [router, isV1]);
 
   useEffect(() => {
     setNftPage(1);
@@ -302,10 +310,6 @@ export default function ProfilePage() {
     return cleaned;
   };
 
-  if (isV1) {
-    return null;
-  }
-
   return (
     <main className={homeStyles.main}>
       <header className={homeStyles.headerBar}>
@@ -393,7 +397,7 @@ export default function ProfilePage() {
               />
               <span>PERPS</span>
             </button>
-            {connected && !isV1 ? (
+            {!isV1 ? (
               <button
                 type="button"
                 className={homeStyles.menuItem}
@@ -464,6 +468,8 @@ export default function ProfilePage() {
       <Ticker />
 
       <section className={styles.content}>
+        <FrogxAccountPanel />
+
         <div className={styles.heroCard}>
           <button
             type="button"
@@ -607,7 +613,7 @@ export default function ProfilePage() {
 
         {!connected ? (
           <div className={styles.overlayMessage}>
-            <p>Connect a wallet to personalize your Frog Social profile.</p>
+            <p>Log in with Privy to personalize your Frog Social profile.</p>
           </div>
         ) : fetchState === "loading" && !profileData ? (
           <div className={styles.overlayMessage}>

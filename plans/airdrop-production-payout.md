@@ -46,7 +46,7 @@ Prize logic is now deterministic and does not need VRF randomness: 1-9 frogs rec
 
 ## Context and Orientation
 
-This repository is `/Users/aklo/projects/ftx`. The backend lives in `apps/api` as a Cloudflare Worker. The airdrop coordinator is `apps/api/src/airdrop.ts`; it uses a Durable Object, which is a small Cloudflare-hosted stateful object with SQLite storage. Public routes are wired in `apps/api/src/index.ts`. Worker environment variable names are typed in `apps/api/src/env.ts` and non-secret defaults are in `apps/api/wrangler.toml`.
+This repository is `/Users/aklo/projects/solanaBFS/ftx`. The backend lives in `apps/api` as a Cloudflare Worker. The airdrop coordinator is `apps/api/src/airdrop.ts`; it uses a Durable Object, which is a small Cloudflare-hosted stateful object with SQLite storage. Public routes are wired in `apps/api/src/index.ts`. Worker environment variable names are typed in `apps/api/src/env.ts` and non-secret defaults are in `apps/api/wrangler.toml`.
 
 The existing airdrop stores claims, reserves deterministic tiered `$DAEMON` prizes when a claim is accepted, and exports payout rows. `$DAEMON` is an ERC20 token on Ethereum mainnet. Sending it automatically requires an Ethereum RPC URL and a private key for the configured escrow wallet, both stored as Cloudflare Worker secrets. Gas means ETH in the escrow wallet to pay Ethereum transaction fees.
 
@@ -62,7 +62,7 @@ Update `.env.example`, `AGENTS.md`, `CHANGELOG.md`, `.codex/memories.md`, and `.
 
 ## Concrete Steps
 
-From `/Users/aklo/projects/ftx`, edit:
+From `/Users/aklo/projects/solanaBFS/ftx`, edit:
 
 - `apps/api/src/airdrop.ts`
 - `apps/api/src/index.ts`

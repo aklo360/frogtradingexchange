@@ -7,7 +7,7 @@ import { WalletButton } from "@/components/WalletButton";
 import { Ticker } from "@/components/Ticker";
 import { useAudio } from "@/providers/AudioProvider";
 import { isV1 } from "@/lib/version";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { usePrivy } from "@privy-io/react-auth";
 import homeStyles from "../page.module.css";
 import styles from "./leaderboard.module.css";
 
@@ -51,7 +51,7 @@ export default function LeaderboardPage() {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const { muted, toggleMuted } = useAudio();
-  const { connected } = useWallet();
+  const { authenticated: connected } = usePrivy();
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
@@ -184,7 +184,7 @@ export default function LeaderboardPage() {
               />
               <span>PERPS</span>
             </button>
-            {connected && !isV1 ? (
+            {!isV1 ? (
               <button
                 type="button"
                 className={homeStyles.menuItem}

@@ -14,6 +14,23 @@ const REGION_PLACEHOLDERS = [
   "{REGION}",
 ];
 
+const redactTitanSecrets = (value: string) =>
+  value
+    .replace(/([?&]auth=)[^&\s)]+/gi, "$1redacted")
+    .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, "$1redacted");
+
+const redactTitanUrl = (value: string) => {
+  try {
+    const parsed = new URL(value);
+    if (parsed.searchParams.has("auth")) {
+      parsed.searchParams.set("auth", "redacted");
+    }
+    return parsed.toString();
+  } catch {
+    return redactTitanSecrets(value);
+  }
+};
+
 export type QuoteRequest = {
   inMint: string;
   outMint: string;
@@ -466,7 +483,9 @@ const requestTitanQuotes = (
   new Promise((resolve, reject) => {
     const logError = (error: unknown) => {
       console.error("Titan WebSocket error", {
-        message: error instanceof Error ? error.message : String(error),
+        message: redactTitanSecrets(
+          error instanceof Error ? error.message : String(error),
+        ),
       });
     };
 
@@ -663,7 +682,7 @@ const wrapQuoteError = (url: string, error: unknown): QuoteAttemptError => {
     error instanceof Error ? error : new Error(String(error ?? "UNKNOWN_ERROR"));
   const wrapped = new Error(baseError.message, { cause: baseError }) as QuoteAttemptError;
   wrapped.name = "TitanQuoteAttemptError";
-  wrapped.url = url;
+  wrapped.url = redactTitanUrl(url);
   return wrapped;
 };
 

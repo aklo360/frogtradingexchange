@@ -1,19 +1,37 @@
-# Memories [~90% - keep under 2200 chars]
+# Memories [keep under 2200 chars]
 
-FTX (Frog Trading Exchange) is managed at `/Users/aklo/projects/ftx`. Git remote is `https://github.com/aklo360/frogtradingexchange.git`; default push identity is `aklo360`.
+FTX: `/Users/aklo/projects/solanaBFS/ftx`; remote
+`git@github.com:aklo360/frogtradingexchange.git`. Confirm target before deploy.
+`frogtrading.exchange` is prod; `hyperribbit.xyz`/`www` 301 to it via
+CF redirect preserving path/query. Preview:
+`https://privy-preview.frogx-ui.pages.dev`; Ribbot must not open it.
+Login order: TG, Google, Phantom, MetaMask.
 
-Stack: pnpm monorepo with Next.js 15 UI in `apps/ui` and Cloudflare Worker API in `apps/api`. Confirm before deploying or changing Cloudflare/Titan/Solana secrets.
+Swap: prod returns account config, Magic Eden SBF floor, and executable Titan
+quote instructions. Titan REST `/frogx/swap` 404s -> API 502; UI falls back to
+`/quotes`, compiles instructions/ALTs, and signs with Privy.
 
-Perps work in progress: `/perps` is a read-only Imperial terminal prototype linked from the hamburger menu. It uses public Imperial endpoints (`/funding-rates`, `/mark-prices`, `/route`, `/status`, `/stats/summary`) and TradingView Lightweight Charts for 15-minute Coinbase candles on supported markets, with GMGN links for mapped Solana assets. GMGN iframe embeds are blocked locally by Cloudflare; Binance returns HTTP 451 from this location. Do not enable live perps order placement until Imperial JWT auth, USDC profile funding, order-bot health gating, and `success:false` response handling are implemented and verified.
+Security: `apps/api/src/titan.ts` redacts `auth=` and Bearer tokens.
 
-Background music defaults to muted. Perps, home, profile, and leaderboard expose mute/unmute controls via the shared AudioProvider state.
+Account APIs: `/account/config`, `/account/intents`, `/nfts/floor`,
+`/nfts/buy-floor`, `/account/telegram`, `/nfts/execute-floor`. TG text never
+buys. Web + TG are equal surfaces keyed by `telegram_user_id`; only the
+delegated Ribbot wallet trades. External wallets verify only.
+Prod Worker `eea8c1c1` has live TG approval execution, NFT approval buttons,
+unauth execute 401, and `nodejs_compat` for Privy signing. `buy-floor` scans
+unaggregated listings, sorts by price, preflights ME txs before Ribbot cards,
+skips Tensor until a builder exists, retries transient ME 429 builds with
+bounded backoff, scans up to 50 same-price MMM floor mints before marking a
+stale pool, skips MMM pools with >10% buyer-side royalty. Must never
+stage a higher quote while cheaper visible frogs exist. MMM fulfill-sell
+`maxPaymentAmount` must be raw lamports, not SOL decimal; compute it from spot
+price, curve delta, and LP fee when pool fields exist. Live no-submit probes
+return preflight-OK 0.032007782 MMM floor quotes for qty 1/2/10.
+`execute-floor` sweeps build/send/confirm one frog at a time, waits
+2.5s between ME builds in prod (`FROGX_NFT_SWEEP_ITEM_DELAY_MS`), skips mints already stale/submitted earlier in the same sweep, and returns `confirmedCount`
+plus partial/pending details. API tests pass 59/59. Bot token is on Mini;
+never print it.
 
-DAEMON airdrop claim/reservation flow is enabled in production: `/airdrop` UI plus Worker `/api/frogx/airdrop/*` and `AirdropCoordinator`. It requires at least 1 Business Frog and a Solana signature binding the entered ETH payout address; Phantom/EVM signature is optional. Claim submission immediately reserves FCFS tiers: 1-9 frogs get `0.10` `$DAEMON`, 10+ frogs get `1.00` `$DAEMON`, until the 10 `$DAEMON` pool is exhausted. UI must distinguish reserved claims from paid ERC20 transfers: no claim is “airdropped” unless `payoutTxHash` exists.
-
-Payout config: token `0x43298327b0249caF5A4942C6951F5Ac6AD7297A0`, active production config points at original escrow `0xC853Fc4dE86fC8868Fa89FC3B207d4592Db19e46`, 18 decimals. On 2026-05-28 the clipboard seed matched this original escrow at `m/44'/60'/0'/0/0`; `AIRDROP_ESCROW_PRIVATE_KEY` was replaced with that signer. `0.009 ETH` was moved from new escrow `0x2c475...0B71` to the original escrow in tx `0xbf2264...f87ad`; payout/autopayout flags were enabled in Worker version `62dd0d2c-86fe-4346-888c-753f86d5f9ad`. Claim #1 paid `0.10 $DAEMON` in tx `0x1e1c76...b04d2`; old escrow now has `9.9 $DAEMON` and about `0.008985 ETH`.
-
-Temporary gas wallet `7p8n64DoGj1kQ2ChT7mXvbztVgjQEgESgrrqExryoNay`; key stored in `~/.secrets.env:FROGX_DAEMON_GAS_SOL_DEPOSIT_SECRET_20260528180237`. Bridged `0.12 SOL` to old escrow ETH via deBridge order `0xe0b7...d57a`; Solana tx `4Tsd...6yQFQ`, Ethereum tx `0x4813...ad19`. On 2026-05-28, moved another `0.0073 SOL` into this wallet, but deBridge still rejected the usable amount as below minimum after rent/fee headroom. Old escrow ETH is now only dust; new escrow `0x2c475831b645620A2bE61f1435c2863242470B71` has no ETH or DAEMON yet.
-
-Local eligibility needs a Helius/DAS-capable `SOLANA_RPC_URL`. `scripts/dev-worker.mjs` writes forwarded env into ignored `apps/api/.dev.vars` instead of CLI `--var` args so secrets do not appear in `ps`.
-
-For future points, the Durable Object records append-only wallet events (`eligibility_checked`, `eligibility_unavailable`, `challenge_created`, `claim_queued`, `payout_sent`, `payout_failed`) in admin export. Treat signed challenge/claim events as stronger evidence than unsigned eligibility checks.
+Tensor key name `TENSOR_API_KEY` exists as a write-only `frogx-api` Worker
+secret. Validation command: `pnpm --filter @frogx/api run tensor:check`; never
+print the key.

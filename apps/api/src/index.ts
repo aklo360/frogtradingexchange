@@ -10,7 +10,14 @@ import {
   postAirdropPayout,
   runAirdropPayout,
 } from "./airdrop";
+import {
+  getAccountConfigRoute,
+  postEnsureTelegramAccount,
+  postTelegramAccountProbe,
+  postTradeIntent,
+} from "./account";
 import { runBuyback } from "./buyback";
+import { getNftFloor, postNftBuyFloor, postNftExecuteFloor } from "./nfts";
 import {
   getBuyback,
   getInfo,
@@ -170,6 +177,45 @@ export default {
     }
     if (url.pathname === "/api/frogx/buyback" && request.method === "GET") {
       return getBuyback(env);
+    }
+    if (
+      url.pathname === "/api/frogx/account/config" &&
+      request.method === "GET"
+    ) {
+      return getAccountConfigRoute(env);
+    }
+    if (
+      url.pathname === "/api/frogx/account/intents" &&
+      request.method === "POST"
+    ) {
+      return postTradeIntent(request, env);
+    }
+    if (
+      url.pathname === "/api/frogx/account/telegram/probe" &&
+      request.method === "POST"
+    ) {
+      return postTelegramAccountProbe(request, env);
+    }
+    if (
+      url.pathname === "/api/frogx/account/telegram" &&
+      request.method === "POST"
+    ) {
+      return postEnsureTelegramAccount(request, env);
+    }
+    if (url.pathname === "/api/frogx/nfts/floor" && request.method === "GET") {
+      return getNftFloor(request, env);
+    }
+    if (
+      url.pathname === "/api/frogx/nfts/buy-floor" &&
+      request.method === "POST"
+    ) {
+      return postNftBuyFloor(request, env);
+    }
+    if (
+      url.pathname === "/api/frogx/nfts/execute-floor" &&
+      request.method === "POST"
+    ) {
+      return postNftExecuteFloor(request, env);
     }
     if (
       url.pathname === "/api/frogx/buyback/execute" &&

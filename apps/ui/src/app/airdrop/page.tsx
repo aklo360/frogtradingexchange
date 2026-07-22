@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { usePrivy } from "@privy-io/react-auth";
+import {
+  useSignMessage,
+  useWallets as usePrivySolanaWallets,
+} from "@privy-io/react-auth/solana";
 
 import { Ticker } from "@/components/Ticker";
 import { WalletButton } from "@/components/WalletButton";
@@ -141,8 +145,20 @@ const getClaimResultLabel = (claim: ClaimStatus) => {
 
 export default function AirdropPage() {
   const router = useRouter();
-  const { publicKey, signMessage, connected } = useWallet();
-  const solAddress = publicKey?.toBase58() ?? "";
+  const { authenticated, login } = usePrivy();
+  const { wallets: privySolanaWallets } = usePrivySolanaWallets();
+  const { signMessage } = useSignMessage();
+  const proofWallet = useMemo(
+    () =>
+      privySolanaWallets.find(
+        (wallet) => !wallet.standardWallet.name.toLowerCase().includes("privy"),
+      ) ??
+      privySolanaWallets[0] ??
+      null,
+    [privySolanaWallets],
+  );
+  const solAddress = proofWallet?.address ?? "";
+  const connected = Boolean(authenticated && proofWallet);
   const [airdrop, setAirdrop] = useState<AirdropResponse | null>(null);
   const [ethAddress, setEthAddress] = useState("");
   const [ethConnectedAddress, setEthConnectedAddress] = useState("");
@@ -292,8 +308,12 @@ export default function AirdropPage() {
   const submitClaim = async () => {
     setError("");
     setStatusText("");
-    if (!solAddress || !signMessage) {
-      setError("Connect a Solana wallet that can sign messages.");
+    if (!authenticated) {
+      login();
+      return;
+    }
+    if (!solAddress || !proofWallet) {
+      setError("Log in with or link a Solana wallet that can sign messages.");
       return;
     }
     if (!eligible) {
@@ -321,9 +341,16 @@ export default function AirdropPage() {
       }
 
       setStatusText("Sign the Solana proof...");
-      const solSignatureBytes = await signMessage(
-        new TextEncoder().encode(challenge.message),
-      );
+      const { signature: solSignatureBytes } = await signMessage({
+        message: new TextEncoder().encode(challenge.message),
+        wallet: proofWallet,
+        options: {
+          uiOptions: {
+            description: "Sign this FTX airdrop proof with your Solana wallet.",
+            showWalletUIs: true,
+          },
+        },
+      });
       const solSignature = bytesToBase64(solSignatureBytes);
 
       let ethSignature = "";
@@ -462,6 +489,17 @@ export default function AirdropPage() {
               />
               <span>SWAP</span>
             </button>
+            <button
+              type="button"
+              className={homeStyles.menuItem}
+              onClick={() => {
+                closeMenu();
+                router.push("/profile");
+              }}
+            >
+              <img src="/bank.svg" alt="" className={homeStyles.menuIcon} />
+              <span>PROFILE</span>
+            </button>
           </nav>
         </div>
       </header>
@@ -510,7 +548,7 @@ export default function AirdropPage() {
                 <h3>Solana frog wallet</h3>
                 <p>
                   {!solAddress
-                    ? "Connect the wallet holding frogs."
+                    ? "Log in with, or link, the wallet holding frogs."
                     : eligibilityLoading
                       ? `${formatAddress(solAddress)} checking frogs...`
                       : eligible
