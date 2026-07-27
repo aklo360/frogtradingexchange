@@ -121,6 +121,7 @@ export type Env = {
   ME_API_KEY_HEADER?: string;
   ME_API_KEY_PREFIX?: string;
   ME_COLLECTION_SYMBOL?: string;
+  MAGIC_EDEN_SELL_EXECUTION_ENABLED?: string;
   ME_STATS_PATH?: string;
   ME_LISTINGS_PATH?: string;
   ME_LISTINGS_QUERY?: string;

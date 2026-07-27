@@ -1189,6 +1189,28 @@ type PrivySolanaSignAndSendResponse = {
   };
 };
 
+export type ManagedPrivyWallet = {
+  walletId: string;
+  walletAddress: string;
+  label: string;
+};
+
+export type ManagedSolanaExecution = {
+  signature: string | null;
+  transactionId: string | null;
+  referenceId: string;
+  caip2: string;
+};
+
+export type ManagedSolanaTransactionStatus = {
+  walletId: string;
+  status: PrivyTransactionStatus;
+  signature: string | null;
+  transactionId: string;
+  referenceId: string;
+  caip2: string;
+};
+
 type PrivyTransactionStatus =
   | "broadcasted"
   | "confirmed"
@@ -10968,6 +10990,112 @@ async function getStoredTradingBotAccount(
   return { account: data.account ?? null };
 }
 
+export async function getManagedPrivyWallet(
+  env: Env,
+  telegramUserId: string,
+  walletAddress: string,
+): Promise<
+  | { wallet: ManagedPrivyWallet }
+  | { error: string; status: number }
+> {
+  const accountResult = await getStoredTradingBotAccount(env, telegramUserId);
+  if ("error" in accountResult) {
+    return {
+      error: accountResult.error,
+      status: accountResult.status ?? 503,
+    };
+  }
+  const account = accountResult.account;
+  if (!account) {
+    return { error: "Trading account not found", status: 404 };
+  }
+  if (account.botAccessRevokedAt) {
+    return { error: "FTX bot access has been revoked", status: 409 };
+  }
+  const wallet = account.wallets.find(
+    (entry) => entry.solanaWalletAddress === walletAddress,
+  );
+  if (
+    !wallet ||
+    wallet.walletSource !== "privy" ||
+    !wallet.privyWalletId
+  ) {
+    return {
+      error: "Wallet is not an FTX/FrogX-managed Privy wallet",
+      status: 409,
+    };
+  }
+  return {
+    wallet: {
+      walletId: wallet.privyWalletId,
+      walletAddress: wallet.solanaWalletAddress,
+      label: wallet.label,
+    },
+  };
+}
+
+export function managedSolanaExecutionMissingRequirements(env: Env): string[] {
+  const required: string[] = [];
+  if (!env.TRADING_BOT_ACCOUNTS) required.push("TRADING_BOT_ACCOUNTS");
+  const config = resolvePrivyConfig(env);
+  if (!config) {
+    required.push("PRIVY_APP_ID", "PRIVY_APP_SECRET");
+  } else if (!signerConfigured(config)) {
+    required.push(
+      "PRIVY_AUTHORIZATION_KEY_ID",
+      "PRIVY_AUTHORIZATION_PRIVATE_KEY",
+    );
+  }
+  return Array.from(new Set(required));
+}
+
+export async function signAndSendManagedSolanaTransaction(
+  env: Env,
+  input: {
+    walletId: string;
+    transactionBase64: string;
+    referenceId: string;
+  },
+): Promise<ManagedSolanaExecution> {
+  const config = resolvePrivyConfig(env);
+  if (!config || !signerConfigured(config)) {
+    throw new Error("Privy managed-wallet signer is not configured");
+  }
+  const execution = await privySignAndSendSolanaTransaction(config, {
+    ...input,
+    sponsor: boolFlag(env.TRADING_BOT_SOLANA_GAS_SPONSORSHIP_ENABLED),
+  });
+  return {
+    signature: execution.data?.hash ?? null,
+    transactionId: execution.data?.transaction_id ?? null,
+    referenceId: execution.data?.reference_id ?? input.referenceId,
+    caip2: execution.data?.caip2 ?? SOLANA_MAINNET_CAIP2,
+  };
+}
+
+export async function getManagedSolanaTransactionStatus(
+  env: Env,
+  referenceId: string,
+): Promise<ManagedSolanaTransactionStatus | null> {
+  const config = resolvePrivyConfig(env);
+  if (!config) {
+    throw new Error("Privy managed-wallet service is not configured");
+  }
+  const transaction = await getPrivyTransactionByReferenceId(
+    config,
+    referenceId,
+  );
+  if (!transaction) return null;
+  return {
+    walletId: transaction.wallet_id,
+    status: transaction.status,
+    signature: transaction.transaction_hash,
+    transactionId: transaction.id,
+    referenceId: transaction.reference_id ?? referenceId,
+    caip2: transaction.caip2,
+  };
+}
+
 async function privySignAndSendSolanaTransaction(
   config: PrivyConfig,
   input: {
@@ -18399,7 +18527,7 @@ function resolveRpcUrl(env: Env): string {
   );
 }
 
-function authorizeTradingBotRequest(
+export function authorizeTradingBotRequest(
   request: Request,
   env: Env,
 ): "allowed" | "denied" | "missing" {

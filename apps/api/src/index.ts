@@ -11,6 +11,12 @@ import {
   runAirdropPayout,
 } from "./airdrop";
 import { runBuyback } from "./buyback";
+import {
+  getMagicEdenTopOffer,
+  postMagicEdenSellExecution,
+  postMagicEdenSellExecutionStatus,
+  postMagicEdenSellTransaction,
+} from "./magicEdenSell";
 import { getNftHoldings } from "./nftHoldings";
 import {
   getRobinhoodAlphaSignals,
@@ -247,6 +253,30 @@ export default {
     }
     if (url.pathname === "/api/frogx/nfts" && request.method === "GET") {
       return getNftHoldings(request, env);
+    }
+    if (
+      url.pathname === "/api/frogx/magic-eden/top-offer" &&
+      request.method === "GET"
+    ) {
+      return getMagicEdenTopOffer(request, env);
+    }
+    if (
+      url.pathname === "/api/frogx/magic-eden/sell-transaction" &&
+      request.method === "POST"
+    ) {
+      return postMagicEdenSellTransaction(request, env);
+    }
+    if (
+      url.pathname === "/api/frogx/magic-eden/execute-sell" &&
+      request.method === "POST"
+    ) {
+      return postMagicEdenSellExecution(request, env);
+    }
+    if (
+      url.pathname === "/api/frogx/magic-eden/execute-sell/status" &&
+      request.method === "POST"
+    ) {
+      return postMagicEdenSellExecutionStatus(request, env);
     }
     if (
       url.pathname === "/api/frogx/trading-bot/config" &&
