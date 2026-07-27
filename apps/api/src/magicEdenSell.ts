@@ -16,6 +16,7 @@ import {
   getManagedPrivyWallet,
   getManagedSolanaTransactionStatus,
   managedSolanaExecutionMissingRequirements,
+  PrivyWalletRpcError,
   signAndSendManagedSolanaTransaction,
 } from "./tradingBot";
 
@@ -703,7 +704,27 @@ export const postMagicEdenSellExecution = async (
         transactionBase64: bytesToBase64(transaction),
         referenceId,
       });
-    } catch {
+    } catch (error) {
+      if (
+        error instanceof PrivyWalletRpcError &&
+        error.status >= 400 &&
+        error.status < 500 &&
+        ![408, 409, 425, 429].includes(error.status)
+      ) {
+        return json(
+          {
+            status: "rejected",
+            code: "PRIVY_REJECTED_TRANSACTION",
+            privyStatus: error.status,
+            referenceId,
+            walletAddress: input.walletAddress,
+            mint: input.mint,
+            offer,
+            error: "Privy rejected the sale transaction before broadcast.",
+          },
+          { status: 502 },
+        );
+      }
       return json(
         {
           status: "pending_reconciliation",

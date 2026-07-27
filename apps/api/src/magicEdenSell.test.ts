@@ -19,6 +19,15 @@ const tradingBotMocks = vi.hoisted(() => ({
   signAndSendManagedSolanaTransaction: vi.fn(),
 }));
 
+const MockPrivyWalletRpcError = vi.hoisted(
+  () =>
+    class extends Error {
+      constructor(readonly status: number) {
+        super(`Privy wallet RPC failed with status ${status}`);
+      }
+    },
+);
+
 vi.mock("@privy-io/node", () => ({
   PrivyClient: class {
     utils() {
@@ -35,7 +44,10 @@ vi.mock("@privy-io/node", () => ({
   },
 }));
 
-vi.mock("./tradingBot", () => tradingBotMocks);
+vi.mock("./tradingBot", () => ({
+  ...tradingBotMocks,
+  PrivyWalletRpcError: MockPrivyWalletRpcError,
+}));
 
 import type { Env } from "./env";
 import {

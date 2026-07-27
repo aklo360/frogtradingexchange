@@ -1211,6 +1211,12 @@ export type ManagedSolanaTransactionStatus = {
   caip2: string;
 };
 
+export class PrivyWalletRpcError extends Error {
+  constructor(readonly status: number) {
+    super(`Privy wallet RPC failed with status ${status}`);
+  }
+}
+
 type PrivyTransactionStatus =
   | "broadcasted"
   | "confirmed"
@@ -11148,9 +11154,7 @@ async function privySignAndSendSolanaTransaction(
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(
-      `Privy signAndSendTransaction failed with status ${response.status}`,
-    );
+    throw new PrivyWalletRpcError(response.status);
   }
 
   return (await response.json()) as PrivySolanaSignAndSendResponse;
