@@ -22,7 +22,10 @@ const tradingBotMocks = vi.hoisted(() => ({
 const MockPrivyWalletRpcError = vi.hoisted(
   () =>
     class extends Error {
-      constructor(readonly status: number) {
+      constructor(
+        readonly status: number,
+        readonly kind: "authorization" | "transport" | "http" = "http",
+      ) {
         super(`Privy wallet RPC failed with status ${status}`);
       }
     },

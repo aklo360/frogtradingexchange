@@ -716,6 +716,7 @@ export const postMagicEdenSellExecution = async (
             status: "rejected",
             code: "PRIVY_REJECTED_TRANSACTION",
             privyStatus: error.status,
+            privyFailureKind: error.kind,
             referenceId,
             walletAddress: input.walletAddress,
             mint: input.mint,
@@ -728,6 +729,12 @@ export const postMagicEdenSellExecution = async (
       return json(
         {
           status: "pending_reconciliation",
+          privyStatus:
+            error instanceof PrivyWalletRpcError && error.status > 0
+              ? error.status
+              : null,
+          privyFailureKind:
+            error instanceof PrivyWalletRpcError ? error.kind : "unknown",
           referenceId,
           walletAddress: input.walletAddress,
           mint: input.mint,

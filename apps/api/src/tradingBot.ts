@@ -1213,8 +1213,15 @@ export type ManagedSolanaTransactionStatus = {
 };
 
 export class PrivyWalletRpcError extends Error {
-  constructor(readonly status: number) {
-    super(`Privy wallet RPC failed with status ${status}`);
+  constructor(
+    readonly status: number,
+    readonly kind: "authorization" | "transport" | "http" = "http",
+  ) {
+    super(
+      kind === "http"
+        ? `Privy wallet RPC failed with status ${status}`
+        : `Privy wallet RPC failed during ${kind}`,
+    );
   }
 }
 
@@ -11130,15 +11137,17 @@ async function privySignAndSendSolanaTransaction(
     "privy-idempotency-key": input.referenceId,
     "privy-request-expiry": requestExpiry,
   };
-  const authorizationSignature = await generatePrivyAuthorizationSignature(
-    config,
-    {
+  let authorizationSignature: string;
+  try {
+    authorizationSignature = await generatePrivyAuthorizationSignature(config, {
       url,
       method: "POST",
       headers: signedHeaders,
       body,
-    },
-  );
+    });
+  } catch {
+    throw new PrivyWalletRpcError(0, "authorization");
+  }
 
   const headers = new Headers({
     "Content-Type": "application/json",
@@ -11149,11 +11158,16 @@ async function privySignAndSendSolanaTransaction(
     Authorization: `Basic ${encodeBasicAuth(config)}`,
   });
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new PrivyWalletRpcError(0, "transport");
+  }
   if (!response.ok) {
     throw new PrivyWalletRpcError(response.status);
   }
