@@ -4,6 +4,7 @@ import {
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
 import { PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
+import { generateAuthorizationSignature } from "@privy-io/node";
 
 import { getTitanConfig, type Env } from "./env";
 import { getPlatformFeeConfig } from "./fees";
@@ -11342,52 +11343,18 @@ async function generatePrivyAuthorizationSignature(
   if (!config.authorizationPrivateKey) {
     throw new Error("Privy authorization private key is not configured");
   }
-  const payload = {
-    version: 1,
-    method: request.method,
-    url: request.url,
-    body: request.body,
-    headers: request.headers,
-  };
-  const keyBytes = base64ToBytes(
-    normalizePrivateKeyBase64(config.authorizationPrivateKey),
-  );
-  const key = await crypto.subtle.importKey(
-    "pkcs8",
-    keyBytes,
-    { name: "ECDSA", namedCurve: "P-256" },
-    false,
-    ["sign"],
-  );
-  const signature = await crypto.subtle.sign(
-    { name: "ECDSA", hash: "SHA-256" },
-    key,
-    new TextEncoder().encode(canonicalJson(payload)),
-  );
-  return bytesToBase64(new Uint8Array(signature));
-}
-
-function canonicalJson(value: unknown): string {
-  if (
-    value === null ||
-    typeof value === "boolean" ||
-    typeof value === "number"
-  ) {
-    return JSON.stringify(value);
-  }
-  if (typeof value === "string") return JSON.stringify(value);
-  if (Array.isArray(value)) {
-    return `[${value.map((entry) => canonicalJson(entry)).join(",")}]`;
-  }
-  if (typeof value === "object" && value) {
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record)
-      .filter((key) => record[key] !== undefined)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
-      .join(",")}}`;
-  }
-  return "null";
+  return generateAuthorizationSignature({
+    authorizationPrivateKey: normalizePrivateKeyBase64(
+      config.authorizationPrivateKey,
+    ),
+    input: {
+      version: 1,
+      method: request.method,
+      url: request.url,
+      body: request.body,
+      headers: request.headers,
+    },
+  });
 }
 
 function normalizePrivateKeyBase64(value: string): string {
