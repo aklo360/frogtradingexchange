@@ -11,12 +11,22 @@ type BuybackStatus = {
   floorSol: number | null;
   progress: number | null;
   remainingSol: number | null;
+  feeAccounts?: {
+    ready: boolean;
+    wsol: boolean;
+    usdc: boolean;
+    usdt: boolean;
+  };
+  automation?: {
+    ready: boolean;
+    reason: string | null;
+  };
   updatedAt: string;
 };
 
 const solFormatter = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 0,
-  maximumFractionDigits: 3,
+  maximumFractionDigits: 4,
 });
 
 const formatSol = (value: number | null) =>
@@ -26,24 +36,26 @@ const formatSol = (value: number | null) =>
 
 const TOAST_DURATION_MS = 2000;
 const POP_DURATION_MS = 650;
-const RESET_DELAY_MS = 5000;
 
 export const BuybackProgress = () => {
   const [status, setStatus] = useState<BuybackStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [celebrate, setCelebrate] = useState(false);
   const [toastVisible, setToastVisible] = useState(false);
-  const [forceReset, setForceReset] = useState(false);
   const prevProgressRef = useRef(0);
   const toastTimerRef = useRef<number | null>(null);
   const popTimerRef = useRef<number | null>(null);
-  const resetTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    const controller = new AbortController();
+    let inFlight = false;
+    let activeController: AbortController | null = null;
 
     const load = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      const controller = new AbortController();
+      activeController = controller;
       try {
         setError(null);
         const response = await fetch(buildApiUrl("/api/frogx/buyback"), {
@@ -61,14 +73,19 @@ export const BuybackProgress = () => {
         if ((err as Error).name !== "AbortError" && !cancelled) {
           setError("Buyback feed offline");
         }
+      } finally {
+        if (activeController === controller) {
+          activeController = null;
+        }
+        inFlight = false;
       }
     };
 
-    load();
-    const interval = window.setInterval(load, 5_000);
+    void load();
+    const interval = window.setInterval(() => void load(), 5_000);
     return () => {
       cancelled = true;
-      controller.abort();
+      activeController?.abort();
       window.clearInterval(interval);
     };
   }, []);
@@ -93,15 +110,11 @@ export const BuybackProgress = () => {
     if (prev < 1 && rawProgress >= 1) {
       setCelebrate(true);
       setToastVisible(true);
-      setForceReset(false);
       if (toastTimerRef.current) {
         window.clearTimeout(toastTimerRef.current);
       }
       if (popTimerRef.current) {
         window.clearTimeout(popTimerRef.current);
-      }
-      if (resetTimerRef.current) {
-        window.clearTimeout(resetTimerRef.current);
       }
       popTimerRef.current = window.setTimeout(() => {
         setCelebrate(false);
@@ -109,15 +122,6 @@ export const BuybackProgress = () => {
       toastTimerRef.current = window.setTimeout(() => {
         setToastVisible(false);
       }, TOAST_DURATION_MS);
-      resetTimerRef.current = window.setTimeout(() => {
-        setForceReset(true);
-      }, RESET_DELAY_MS);
-    }
-    if (rawProgress < 1) {
-      if (resetTimerRef.current) {
-        window.clearTimeout(resetTimerRef.current);
-      }
-      setForceReset(false);
     }
     prevProgressRef.current = rawProgress;
   }, [rawProgress]);
@@ -129,23 +133,21 @@ export const BuybackProgress = () => {
     if (popTimerRef.current) {
       window.clearTimeout(popTimerRef.current);
     }
-    if (resetTimerRef.current) {
-      window.clearTimeout(resetTimerRef.current);
-    }
   }, []);
 
-  const percent = useMemo(() => {
-    if (forceReset) return 0;
-    return Math.round(rawProgress * 100);
-  }, [forceReset, rawProgress]);
+  const percent = rawProgress * 100;
+  const roundedPercent = Math.round(percent);
+  const percentLabel =
+    percent > 0 && percent < 1 ? "<1%" : `${roundedPercent}%`;
+  const automationPaused = status?.automation?.ready === false;
 
   const solLabel = useMemo(() => {
     if (!status) return null;
-    const collected = formatSol(forceReset ? 0 : status.collectedSol);
+    const collected = formatSol(status.collectedSol);
     if (collected === null) return null;
     const floor = formatSol(status.floorSol);
     return floor === null ? `${collected} SOL` : `${collected} / ${floor} SOL`;
-  }, [forceReset, status]);
+  }, [status]);
 
   return (
     <section
@@ -162,6 +164,7 @@ export const BuybackProgress = () => {
           <div className={styles.toastBubble}>Burn ready! Frog incoming.</div>
         </div>
       ) : null}
+      <h2 className={styles.heading}>Buy Back &amp; Burn Progress</h2>
       <div className={styles.barRow}>
         <div
           className={styles.track}
@@ -169,7 +172,7 @@ export const BuybackProgress = () => {
           aria-label="Progress to next frog burn"
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-valuenow={error ? undefined : percent}
+          aria-valuenow={error ? undefined : Number(percent.toFixed(2))}
         >
           <div
             className={styles.fill}
@@ -184,8 +187,8 @@ export const BuybackProgress = () => {
         {error
           ? "—"
           : solLabel
-            ? `${solLabel} · ${percent}%`
-            : `${percent}%`}
+            ? `${solLabel} · ${percentLabel}${automationPaused ? " · automation paused" : ""}`
+            : `${percentLabel}${automationPaused ? " · automation paused" : ""}`}
       </p>
     </section>
   );

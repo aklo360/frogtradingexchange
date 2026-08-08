@@ -33,6 +33,13 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 !.env.example
+
+# Private local agent context
+AGENTS.md
+CLAUDE.md
+.codex/
+.claude/
+.llphant/
 .dev.vars*
 
 # vercel

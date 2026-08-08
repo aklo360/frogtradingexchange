@@ -1,5 +1,7 @@
 import {
   ACCOUNT_SIZE,
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  createBurnCheckedInstruction,
   createCloseAccountInstruction,
   createInitializeAccountInstruction,
   createTransferInstruction,
@@ -13,6 +15,8 @@ import {
   PublicKey,
   SystemProgram,
   Transaction,
+  TransactionInstruction,
+  TransactionMessage,
   VersionedTransaction,
 } from "@solana/web3.js";
 import bs58 from "bs58";
@@ -25,9 +29,9 @@ const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const USDT_MINT = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB";
 
 const DEFAULT_ME_BASE_URL = "https://api-mainnet.magiceden.dev/v2";
-const DEFAULT_ME_STATS_PATH = "/collections/{symbol}/stats";
 const DEFAULT_ME_LISTINGS_PATH = "/collections/{symbol}/listings";
-const DEFAULT_ME_LISTINGS_QUERY = "offset=0&limit=1&sort=price";
+const DEFAULT_ME_LISTINGS_QUERY =
+  "offset=0&limit=100&sort=listPrice&sort_direction=asc";
 const DEFAULT_ME_BUY_NOW_PATH = "/instructions/buy_now";
 const DEFAULT_ME_MMM_POOLS_PATH = "/mmm/pools";
 const DEFAULT_ME_MMM_FULFILL_SELL_PATH = "/instructions/mmm/sol-fulfill-sell";
@@ -35,13 +39,19 @@ const DEFAULT_ME_WALLET_TOKENS_PATH = "/wallets/{wallet}/tokens";
 const DEFAULT_ME_MMM_POOLS_LIMIT = 500;
 const JUPITER_PRICE_URL = "https://lite-api.jup.ag/price/v3";
 
-const DEFAULT_RESERVE_SOL = 0.05;
-const DEFAULT_RESERVE_USDC = 1;
-const DEFAULT_RESERVE_USDT = 1;
-const DEFAULT_RESERVE_WSOL = 1;
-const DEFAULT_MIN_SWAP_USDC = 1;
-const DEFAULT_MIN_SWAP_USDT = 1;
+const DEFAULT_RESERVE_SOL = 0.005;
+const DEFAULT_RESERVE_USDC = 0;
+const DEFAULT_RESERVE_USDT = 0;
+const DEFAULT_RESERVE_WSOL = 0;
+const DEFAULT_MIN_SWAP_USDC = 0.01;
+const DEFAULT_MIN_SWAP_USDT = 0.01;
 const DEFAULT_SWAP_SLIPPAGE_BPS = 100;
+
+const BUYBACK_FEE_MINTS = [
+  { symbol: "WSOL", mint: WRAPPED_SOL_MINT },
+  { symbol: "USDC", mint: USDC_MINT },
+  { symbol: "USDT", mint: USDT_MINT },
+] as const;
 
 type BuybackConfig = {
   enabled: boolean;
@@ -64,12 +74,10 @@ type BuybackConfig = {
     apiKeyHeader: string;
     apiKeyPrefix: string | null;
     collectionSymbol: string;
-    statsPath: string;
     listingsPath: string;
     listingsQuery: string;
     buyNowPath: string;
     buyNowMethod: "GET" | "POST";
-    floorUnit: "lamports" | "sol";
   };
   incinerator: {
     baseUrl: string | null;
@@ -91,13 +99,34 @@ type BuybackStatus = {
   floorSol: number | null;
   progress: number | null;
   remainingSol: number | null;
+  grossCollectedLamports?: string | null;
+  grossCollectedSol?: number | null;
+  reserveLamports?: string;
+  reserveSol?: number;
   tokenBalances?: {
     nativeSol: number;
     wsol: number;
     usdc: number;
     usdt: number;
   };
+  feeAccounts?: {
+    ready: boolean;
+    wsol: boolean;
+    usdc: boolean;
+    usdt: boolean;
+  };
   priceSource?: string | null;
+  target?: {
+    mint: string;
+    source: string | null;
+  } | null;
+  automation?: {
+    ready: boolean;
+    walletSigner: boolean;
+    burnEnabled: boolean;
+    burnProvider: "sol-incinerator-with-native-fallback" | "native-spl";
+    reason: string | null;
+  };
   updatedAt: string;
 };
 
@@ -301,7 +330,6 @@ const resolveBuybackConfig = (env: Env): BuybackConfig => {
       apiKeyPrefix: magicEdenKeyPrefix || null,
       collectionSymbol:
         env.ME_COLLECTION_SYMBOL?.trim() || "solana_business_frogs",
-      statsPath: env.ME_STATS_PATH?.trim() || DEFAULT_ME_STATS_PATH,
       listingsPath: env.ME_LISTINGS_PATH?.trim() || DEFAULT_ME_LISTINGS_PATH,
       listingsQuery:
         env.ME_LISTINGS_QUERY?.trim() || DEFAULT_ME_LISTINGS_QUERY,
@@ -309,10 +337,6 @@ const resolveBuybackConfig = (env: Env): BuybackConfig => {
       buyNowMethod:
         (env.ME_BUY_NOW_METHOD?.trim().toUpperCase() as "GET" | "POST") ||
         "GET",
-      floorUnit:
-        (env.ME_FLOOR_PRICE_UNIT?.trim().toLowerCase() as
-          | "lamports"
-          | "sol") || "lamports",
     },
     incinerator: {
       baseUrl: env.SOL_INCINERATOR_API_URL?.trim() || null,
@@ -370,6 +394,13 @@ const decodeTransactionPayload = (value: unknown): Uint8Array => {
 const decodeLamportsToSol = (lamports: bigint) =>
   Number(lamports) / LAMPORTS_PER_SOL;
 
+export const formatLamportsAsSol = (lamports: bigint) =>
+  `${lamports / BigInt(LAMPORTS_PER_SOL)}.${(
+    lamports % BigInt(LAMPORTS_PER_SOL)
+  )
+    .toString()
+    .padStart(9, "0")}`;
+
 const fetchJson = async <T>(
   url: string,
   init?: RequestInit,
@@ -402,97 +433,43 @@ const resolveMagicEdenUrl = (baseUrl: string, path: string) => {
   return new URL(normalizedPath, normalizedBase);
 };
 
-// Magic Eden fee structure (as of 2024):
-// - Marketplace fee: 2% (200 bps)
-// - Creator royalties: 2.5% (250 bps) for SBF collection
-// Total: 4.5% on top of listing price
-const ME_MARKETPLACE_FEE_BPS = 200;
-const ME_CREATOR_ROYALTY_BPS = 250;
-const ME_TOTAL_FEE_BPS = ME_MARKETPLACE_FEE_BPS + ME_CREATOR_ROYALTY_BPS;
-
-/**
- * Calculates total cost to buy including fees.
- * Magic Eden shows "total cost" on their UI which includes marketplace + royalty fees.
- */
-const addBuyerFees = (basePriceLamports: bigint): bigint => {
-  // Total cost = base price * (1 + fee%)
-  // fee% = 4.5% = 450 bps = 0.045
-  const feeMultiplier = 10000n + BigInt(ME_TOTAL_FEE_BPS);
-  return (basePriceLamports * feeMultiplier) / 10000n;
-};
-
-const getFloorPriceLamports = async (
-  config: BuybackConfig,
-): Promise<bigint> => {
-  const url = resolveMagicEdenUrl(
-    config.magicEden.baseUrl,
-    resolvePath(config.magicEden.statsPath, config.magicEden.collectionSymbol),
-  );
-  const headers = buildHeaders(
-    config.magicEden.apiKey,
-    config.magicEden.apiKeyHeader,
-    config.magicEden.apiKeyPrefix,
-  );
-  const data = await fetchJson<Record<string, unknown>>(url.toString(), {
-    headers,
-  });
-
-  const raw =
-    (data.floorPrice as number | string | undefined) ??
-    (data.floor_price as number | string | undefined) ??
-    (data.floorPriceLamports as number | string | undefined) ??
-    (data.floor_price_lamports as number | string | undefined);
-
-  if (raw === undefined || raw === null) {
-    throw new Error("FLOOR_PRICE_MISSING");
+const parseListing = (value: unknown): FloorListing | null => {
+  if (!value || typeof value !== "object") {
+    return null;
   }
-
-  const numeric = Number(raw);
-  if (!Number.isFinite(numeric)) {
-    throw new Error("FLOOR_PRICE_INVALID");
-  }
-
-  let basePriceLamports: bigint;
-  if (config.magicEden.floorUnit === "sol") {
-    basePriceLamports = BigInt(Math.round(numeric * LAMPORTS_PER_SOL));
-  } else {
-    basePriceLamports = BigInt(Math.round(numeric));
-  }
-
-  // Add buyer fees (marketplace + royalties) to get total cost
-  return addBuyerFees(basePriceLamports);
-};
-
-const pickListing = (payload: unknown): FloorListing => {
-  const list = Array.isArray(payload)
-    ? payload
-    : (payload as { listings?: unknown[]; results?: unknown[] })?.listings ??
-      (payload as { listings?: unknown[]; results?: unknown[] })?.results ??
-      [];
-  const first = Array.isArray(list) ? list[0] : null;
-  if (!first || typeof first !== "object") {
-    throw new Error("NO_LISTINGS");
-  }
-  const listing = first as Record<string, unknown>;
+  const listing = value as Record<string, unknown>;
   const rawLamports =
     listing.priceLamports ??
     listing.price_lamports ??
-    (listing.priceInfo as { solPrice?: { rawAmount?: string | number } } | undefined)
-      ?.solPrice?.rawAmount ??
-    (listing.price_info as { solPrice?: { rawAmount?: string | number } } | undefined)
-      ?.solPrice?.rawAmount;
+    (
+      listing.priceInfo as
+        | { solPrice?: { rawAmount?: string | number } }
+        | undefined
+    )?.solPrice?.rawAmount ??
+    (
+      listing.price_info as
+        | { solPrice?: { rawAmount?: string | number } }
+        | undefined
+    )?.solPrice?.rawAmount;
   const rawPrice =
     listing.price ??
     (listing.price_info as { price?: number | string } | undefined)?.price ??
     (listing.priceInfo as { price?: number | string } | undefined)?.price;
 
-  const lamportsValue =
-    rawLamports !== undefined && rawLamports !== null
-      ? Number(rawLamports)
-      : Number(rawPrice) * LAMPORTS_PER_SOL;
-
-  if (!Number.isFinite(lamportsValue)) {
-    throw new Error("LISTING_PRICE_MISSING");
+  let priceLamports: bigint;
+  try {
+    if (rawLamports !== undefined && rawLamports !== null) {
+      priceLamports = BigInt(String(rawLamports));
+    } else {
+      const priceSol = Number(rawPrice);
+      if (!Number.isFinite(priceSol)) return null;
+      priceLamports = BigInt(Math.round(priceSol * LAMPORTS_PER_SOL));
+    }
+  } catch {
+    return null;
+  }
+  if (priceLamports <= 0n) {
+    return null;
   }
 
   const tokenMint =
@@ -500,7 +477,7 @@ const pickListing = (payload: unknown): FloorListing => {
     (listing.mint as string | undefined) ??
     (listing.token as { mint?: string } | undefined)?.mint;
   if (!tokenMint) {
-    throw new Error("LISTING_MINT_MISSING");
+    return null;
   }
 
   const tokenAccount =
@@ -522,13 +499,36 @@ const pickListing = (payload: unknown): FloorListing => {
     (listing.listingType as string | undefined);
 
   return {
-    priceLamports: BigInt(Math.round(lamportsValue)),
+    priceLamports,
     tokenMint,
     tokenAccount,
     seller,
     auctionHouse,
     source,
   };
+};
+
+export const selectCheapestListing = (payload: unknown): FloorListing => {
+  const list = Array.isArray(payload)
+    ? payload
+    : (payload as { listings?: unknown[]; results?: unknown[] })?.listings ??
+      (payload as { listings?: unknown[]; results?: unknown[] })?.results ??
+      [];
+  const listings = (Array.isArray(list) ? list : [])
+    .map(parseListing)
+    .filter((listing): listing is FloorListing => listing !== null)
+    .sort((left, right) =>
+      left.priceLamports < right.priceLamports
+        ? -1
+        : left.priceLamports > right.priceLamports
+          ? 1
+          : 0,
+    );
+  const listing = listings[0];
+  if (!listing) {
+    throw new Error("NO_LISTINGS");
+  }
+  return listing;
 };
 
 const fetchFloorListing = async (
@@ -548,7 +548,7 @@ const fetchFloorListing = async (
     config.magicEden.apiKeyPrefix,
   );
   const data = await fetchJson<unknown>(url.toString(), { headers });
-  return pickListing(data);
+  return selectCheapestListing(data);
 };
 
 const pickWalletToken = (payload: unknown): WalletToken => {
@@ -680,7 +680,7 @@ const requestMmmFulfillSellTx = async (
   const params = new URLSearchParams({
     pool: pool.poolKey,
     assetAmount: "1",
-    maxPaymentAmount: listing.priceLamports.toString(),
+    maxPaymentAmount: formatLamportsAsSol(listing.priceLamports),
     buysideCreatorRoyaltyBp: String(pool.buysideCreatorRoyaltyBp ?? 0),
     buyer,
     assetMint: listing.tokenMint,
@@ -911,6 +911,241 @@ const sendTransaction = async (
   return signature;
 };
 
+const burnStandardNft = async (
+  connection: Connection,
+  keypair: Keypair,
+  mint: string,
+) => {
+  const mintKey = new PublicKey(mint);
+  const accounts = await connection.getParsedTokenAccountsByOwner(
+    keypair.publicKey,
+    { mint: mintKey },
+    "confirmed",
+  );
+  const tokenAccount = accounts.value.find(({ account }) => {
+    const tokenAmount = (
+      account.data as {
+        parsed?: {
+          info?: {
+            tokenAmount?: {
+              amount?: string;
+              decimals?: number;
+            };
+          };
+        };
+      }
+    ).parsed?.info?.tokenAmount;
+    return tokenAmount?.amount === "1" && tokenAmount.decimals === 0;
+  });
+  if (!tokenAccount) {
+    throw new Error("OWNED_STANDARD_NFT_ACCOUNT_MISSING");
+  }
+
+  const transaction = new Transaction().add(
+    createBurnCheckedInstruction(
+      tokenAccount.pubkey,
+      mintKey,
+      keypair.publicKey,
+      1,
+      0,
+    ),
+    createCloseAccountInstruction(
+      tokenAccount.pubkey,
+      keypair.publicKey,
+      keypair.publicKey,
+    ),
+  );
+  const latest = await connection.getLatestBlockhash("confirmed");
+  transaction.recentBlockhash = latest.blockhash;
+  transaction.feePayer = keypair.publicKey;
+  transaction.sign(keypair);
+
+  const signature = await connection.sendRawTransaction(
+    transaction.serialize(),
+    {
+      maxRetries: 3,
+      preflightCommitment: "confirmed",
+      skipPreflight: false,
+    },
+  );
+  const confirmation = await connection.confirmTransaction(
+    { signature, ...latest },
+    "confirmed",
+  );
+  if (confirmation.value.err) {
+    throw new Error(
+      `NATIVE_NFT_BURN_CONFIRM_FAILED:${JSON.stringify(confirmation.value.err)}`,
+    );
+  }
+  await assertSignatureStatus(connection, signature, "NATIVE_NFT_BURN");
+  console.log("[buyback] Native NFT burn confirmed", { mint, signature });
+  return signature;
+};
+
+const burnNftAsset = async (
+  config: BuybackConfig,
+  connection: Connection,
+  keypair: Keypair,
+  mint: string,
+) => {
+  const owner = keypair.publicKey.toBase58();
+  if (config.incinerator.baseUrl) {
+    try {
+      const burnTx = await requestIncineratorTx(config, mint, owner);
+      return await sendTransaction(
+        connection,
+        keypair,
+        burnTx,
+        "buyback-burn",
+      );
+    } catch (error) {
+      console.warn(
+        "[buyback] Incinerator burn failed; attempting native burn",
+        { mint, error },
+      );
+    }
+  }
+  return burnStandardNft(connection, keypair, mint);
+};
+
+export const getBuybackFeeAccountRepairPlan = (owner: PublicKey) =>
+  BUYBACK_FEE_MINTS.map(({ symbol, mint }) => {
+    const mintAddress = new PublicKey(mint);
+    const address = getAssociatedTokenAddressSync(mintAddress, owner);
+    const instruction = new TransactionInstruction({
+      keys: [
+        { pubkey: owner, isSigner: true, isWritable: true },
+        { pubkey: address, isSigner: false, isWritable: true },
+        { pubkey: owner, isSigner: false, isWritable: false },
+        { pubkey: mintAddress, isSigner: false, isWritable: false },
+        {
+          pubkey: SystemProgram.programId,
+          isSigner: false,
+          isWritable: false,
+        },
+        { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      ],
+      programId: ASSOCIATED_TOKEN_PROGRAM_ID,
+      data: Uint8Array.of(1) as TransactionInstruction["data"],
+    });
+    return {
+      symbol,
+      mint,
+      address,
+      instruction,
+    };
+  });
+
+export const repairBuybackFeeAccounts = async (env: Env) => {
+  const config = resolveBuybackConfig(env);
+  if (!config.walletSecret) {
+    throw new Error("BUYBACK_WALLET_SECRET_MISSING");
+  }
+  if (!config.walletAddress) {
+    throw new Error("BUYBACK_WALLET_ADDRESS_MISSING");
+  }
+  if (!config.rpcUrl) {
+    throw new Error("BUYBACK_RPC_URL_MISSING");
+  }
+
+  const keypair = resolveWalletKeypair(config.walletSecret);
+  const wallet = keypair.publicKey.toBase58();
+  if (wallet !== config.walletAddress) {
+    throw new Error("BUYBACK_WALLET_ADDRESS_MISMATCH");
+  }
+
+  const connection = new Connection(config.rpcUrl, "confirmed");
+  const plan = getBuybackFeeAccountRepairPlan(keypair.publicKey);
+  const accountInfos = await connection.getMultipleAccountsInfo(
+    plan.map(({ address }) => address),
+    "confirmed",
+  );
+  const missing = plan.filter((_, index) => accountInfos[index] === null);
+  const accounts = Object.fromEntries(
+    plan.map(({ symbol, address }, index) => [
+      symbol.toLowerCase(),
+      {
+        address: address.toBase58(),
+        existed: accountInfos[index] !== null,
+      },
+    ]),
+  );
+
+  if (missing.length === 0) {
+    return {
+      wallet,
+      signature: null,
+      created: [],
+      estimatedRentLamports: "0",
+      feeLamports: "0",
+      accounts,
+    };
+  }
+
+  const rentPerAccount = await connection.getMinimumBalanceForRentExemption(
+    ACCOUNT_SIZE,
+    "confirmed",
+  );
+  const latestBlockhash = await connection.getLatestBlockhash("confirmed");
+  const message = new TransactionMessage({
+    payerKey: keypair.publicKey,
+    recentBlockhash: latestBlockhash.blockhash,
+    instructions: missing.map(({ instruction }) => instruction),
+  }).compileToV0Message();
+  const fee = await connection.getFeeForMessage(message, "confirmed");
+  if (fee.value === null) {
+    throw new Error("BUYBACK_FEE_ESTIMATE_UNAVAILABLE");
+  }
+
+  const transaction = new VersionedTransaction(message);
+  transaction.sign([keypair]);
+  const simulation = await connection.simulateTransaction(transaction, {
+    commitment: "confirmed",
+    sigVerify: false,
+  });
+  if (simulation.value.err) {
+    throw new Error(
+      `BUYBACK_FEE_ACCOUNT_SIMULATION_FAILED:${JSON.stringify(simulation.value.err)}`,
+    );
+  }
+
+  const signature = await connection.sendRawTransaction(
+    transaction.serialize(),
+    {
+      maxRetries: 3,
+      preflightCommitment: "confirmed",
+      skipPreflight: false,
+    },
+  );
+  const confirmation = await connection.confirmTransaction(
+    { signature, ...latestBlockhash },
+    "confirmed",
+  );
+  if (confirmation.value.err) {
+    throw new Error(
+      `BUYBACK_FEE_ACCOUNT_CONFIRM_FAILED:${JSON.stringify(confirmation.value.err)}`,
+    );
+  }
+  await assertSignatureStatus(
+    connection,
+    signature,
+    "BUYBACK_FEE_ACCOUNT_REPAIR",
+  );
+
+  console.log("[buyback] Fee accounts repaired", {
+    signature,
+    created: missing.map(({ symbol }) => symbol),
+  });
+  return {
+    wallet,
+    signature,
+    created: missing.map(({ symbol }) => symbol),
+    estimatedRentLamports: String(rentPerAccount * missing.length),
+    feeLamports: String(fee.value),
+    accounts,
+  };
+};
+
 const unwrapWsol = async (
   connection: Connection,
   keypair: Keypair,
@@ -997,16 +1232,16 @@ const getSplTokenBalance = async (
   }
 };
 
-const getTokenAccountBalance = async (
+const getTokenAccountSnapshot = async (
   connection: Connection,
   account: PublicKey | null,
 ) => {
-  if (!account) return 0n;
+  if (!account) return { amount: 0n, ready: false };
   try {
     const balance = await connection.getTokenAccountBalance(account, "confirmed");
-    return BigInt(balance.value.amount);
+    return { amount: BigInt(balance.value.amount), ready: true };
   } catch {
-    return 0n;
+    return { amount: 0n, ready: false };
   }
 };
 
@@ -1080,6 +1315,9 @@ const stableTokenValueLamports = (
   const estimatedSol = (tokenUnits * tokenUsd) / solUsd;
   return BigInt(Math.floor(estimatedSol * LAMPORTS_PER_SOL));
 };
+
+export const amountAfterReserve = (amount: bigint, reserve: bigint) =>
+  amount > reserve ? amount - reserve : 0n;
 
 const swapToSol = async (
   config: BuybackConfig,
@@ -1184,27 +1422,47 @@ export const getBuybackStatus = async (env: Env): Promise<BuybackStatus> => {
     walletKey,
   );
 
-  const [solLamports, wsolLamports, usdcAmount, usdtAmount, floorLamports, prices] = await Promise.all([
-    getSolBalance(connection, walletKey),
-    getTokenAccountBalance(connection, wsolAccount),
-    getTokenAccountBalance(connection, usdcAccount),
-    getTokenAccountBalance(connection, usdtAccount),
-    getFloorPriceLamports(config).catch((error) => {
-      console.warn("[buyback] Failed to fetch floor price", error);
-      return null;
-    }),
-    fetchBuybackPrices(),
-  ]);
+  const [solLamports, wsol, usdc, usdt, floorListing, prices] =
+    await Promise.all([
+      getSolBalance(connection, walletKey),
+      getTokenAccountSnapshot(connection, wsolAccount),
+      getTokenAccountSnapshot(connection, usdcAccount),
+      getTokenAccountSnapshot(connection, usdtAccount),
+      fetchFloorListing(config).catch((error) => {
+        console.warn("[buyback] Failed to fetch floor listing", error);
+        return null;
+      }),
+      fetchBuybackPrices(),
+    ]);
 
-  const availableNativeSol = solLamports > config.reserveLamports
-    ? solLamports - config.reserveLamports
-    : 0n;
+  const floorLamports = floorListing?.priceLamports ?? null;
+  const availableNativeSol = amountAfterReserve(
+    solLamports,
+    config.reserveLamports,
+  );
+  const availableWsol = amountAfterReserve(wsol.amount, config.reserveWsol);
+  const availableUsdc = amountAfterReserve(usdc.amount, config.reserveUsdc);
+  const availableUsdt = amountAfterReserve(usdt.amount, config.reserveUsdt);
   const estimatedTokenLamports = prices
-    ? wsolLamports +
-      stableTokenValueLamports(usdcAmount, prices.usdcUsd, prices.solUsd) +
-      stableTokenValueLamports(usdtAmount, prices.usdtUsd, prices.solUsd)
-    : wsolLamports;
+    ? availableWsol +
+      stableTokenValueLamports(
+        availableUsdc,
+        prices.usdcUsd,
+        prices.solUsd,
+      ) +
+      stableTokenValueLamports(
+        availableUsdt,
+        prices.usdtUsd,
+        prices.solUsd,
+      )
+    : availableWsol;
   const collectedLamports = availableNativeSol + estimatedTokenLamports;
+  const grossCollectedLamports = prices
+    ? solLamports +
+      wsol.amount +
+      stableTokenValueLamports(usdc.amount, prices.usdcUsd, prices.solUsd) +
+      stableTokenValueLamports(usdt.amount, prices.usdtUsd, prices.solUsd)
+    : solLamports + wsol.amount;
 
   const progress =
     floorLamports && floorLamports > 0n
@@ -1215,6 +1473,29 @@ export const getBuybackStatus = async (env: Env): Promise<BuybackStatus> => {
     floorLamports && floorLamports > collectedLamports
       ? Number(floorLamports - collectedLamports) / LAMPORTS_PER_SOL
       : 0;
+  const feeAccountsReady = wsol.ready && usdc.ready && usdt.ready;
+  let walletSignerReady = false;
+  let walletSignerReason: string | null = "wallet-signer-missing";
+  if (config.walletSecret) {
+    try {
+      const signerAddress = resolveWalletKeypair(
+        config.walletSecret,
+      ).publicKey.toBase58();
+      walletSignerReady = signerAddress === config.walletAddress;
+      walletSignerReason = walletSignerReady
+        ? null
+        : "wallet-signer-mismatch";
+    } catch {
+      walletSignerReason = "wallet-signer-invalid";
+    }
+  }
+  const automationReason = !feeAccountsReady
+    ? "fee-accounts-missing"
+    : !walletSignerReady
+      ? walletSignerReason
+      : !config.burnEnabled
+        ? "burn-disabled"
+        : null;
 
   return {
     enabled: config.enabled,
@@ -1225,13 +1506,38 @@ export const getBuybackStatus = async (env: Env): Promise<BuybackStatus> => {
     floorSol: toSolNumber(floorLamports),
     progress,
     remainingSol: floorLamports ? remaining : null,
+    grossCollectedLamports: toLamportsString(grossCollectedLamports),
+    grossCollectedSol: toSolNumber(grossCollectedLamports),
+    reserveLamports: config.reserveLamports.toString(),
+    reserveSol: toSolNumber(config.reserveLamports) ?? 0,
     tokenBalances: {
       nativeSol: toSolNumber(solLamports) ?? 0,
-      wsol: tokenAmountToNumber(wsolLamports, 9),
-      usdc: tokenAmountToNumber(usdcAmount, 6),
-      usdt: tokenAmountToNumber(usdtAmount, 6),
+      wsol: tokenAmountToNumber(wsol.amount, 9),
+      usdc: tokenAmountToNumber(usdc.amount, 6),
+      usdt: tokenAmountToNumber(usdt.amount, 6),
+    },
+    feeAccounts: {
+      ready: feeAccountsReady,
+      wsol: wsol.ready,
+      usdc: usdc.ready,
+      usdt: usdt.ready,
     },
     priceSource: prices ? "jupiter-price-v3" : null,
+    target: floorListing
+      ? {
+          mint: floorListing.tokenMint,
+          source: floorListing.source ?? null,
+        }
+      : null,
+    automation: {
+      ready: automationReason === null,
+      walletSigner: walletSignerReady,
+      burnEnabled: config.burnEnabled,
+      burnProvider: config.incinerator.baseUrl
+        ? "sol-incinerator-with-native-fallback"
+        : "native-spl",
+      reason: automationReason,
+    },
     updatedAt,
   };
 };
@@ -1247,30 +1553,18 @@ export const burnBuybackAsset = async (
   if (!config.rpcUrl) {
     throw new Error("RPC_URL_MISSING");
   }
-  if (!config.incinerator.baseUrl) {
-    throw new Error("INCINERATOR_URL_MISSING");
-  }
 
   const keypair = resolveWalletKeypair(config.walletSecret);
   const owner = keypair.publicKey.toBase58();
   if (config.walletAddress && owner !== config.walletAddress) {
-    console.warn("[buyback] Wallet address mismatch; using secret key address", {
-      configured: config.walletAddress,
-      derived: owner,
-    });
+    throw new Error("BUYBACK_WALLET_ADDRESS_MISMATCH");
   }
 
   const mint =
     mintOverride?.trim() || (await fetchWalletToken(config, owner)).mint;
 
   const connection = new Connection(config.rpcUrl, "confirmed");
-  const burnTx = await requestIncineratorTx(config, mint, owner);
-  const signature = await sendTransaction(
-    connection,
-    keypair,
-    burnTx,
-    "buyback-burn",
-  );
+  const signature = await burnNftAsset(config, connection, keypair, mint);
   return { mint, signature };
 };
 
@@ -1280,10 +1574,6 @@ const burnHeldFrogs = async (
   keypair: Keypair,
 ) => {
   if (!config.burnEnabled) {
-    return;
-  }
-  if (!config.incinerator.baseUrl) {
-    console.warn("[buyback] Burn enabled but incinerator URL missing");
     return;
   }
   const owner = keypair.publicKey.toBase58();
@@ -1304,16 +1594,11 @@ const burnHeldFrogs = async (
     }
     seen.add(token.mint);
     try {
-      const burnTx = await requestIncineratorTx(
+      const burnSig = await burnNftAsset(
         config,
-        token.mint,
-        owner,
-      );
-      const burnSig = await sendTransaction(
         connection,
         keypair,
-        burnTx,
-        "held-burn",
+        token.mint,
       );
       console.log("[buyback] Burned held frog", {
         mint: token.mint,
@@ -1345,10 +1630,11 @@ export const runBuyback = async (env: Env): Promise<void> => {
 
   const keypair = resolveWalletKeypair(config.walletSecret);
   if (config.walletAddress && keypair.publicKey.toBase58() !== config.walletAddress) {
-    console.warn("[buyback] Wallet address mismatch; using secret key address", {
+    console.error("[buyback] Wallet address mismatch; refusing to run", {
       configured: config.walletAddress,
       derived: keypair.publicKey.toBase58(),
     });
+    return;
   }
 
   const connection = new Connection(config.rpcUrl, "confirmed");
@@ -1360,10 +1646,8 @@ export const runBuyback = async (env: Env): Promise<void> => {
     getSplTokenBalance(connection, owner, USDT_MINT),
   ]);
 
-  const swappableUsdc =
-    usdcBalance > config.reserveUsdc ? usdcBalance - config.reserveUsdc : 0n;
-  const swappableUsdt =
-    usdtBalance > config.reserveUsdt ? usdtBalance - config.reserveUsdt : 0n;
+  const swappableUsdc = amountAfterReserve(usdcBalance, config.reserveUsdc);
+  const swappableUsdt = amountAfterReserve(usdtBalance, config.reserveUsdt);
 
   if (swappableUsdc >= config.minSwapUsdc) {
     console.log("[buyback] Swapping USDC -> SOL", swappableUsdc.toString());
@@ -1406,8 +1690,7 @@ export const runBuyback = async (env: Env): Promise<void> => {
     owner,
     WRAPPED_SOL_MINT,
   );
-  const swappableWsol =
-    wsolBalance > config.reserveWsol ? wsolBalance - config.reserveWsol : 0n;
+  const swappableWsol = amountAfterReserve(wsolBalance, config.reserveWsol);
   if (swappableWsol > 0n) {
     console.log("[buyback] Unwrapping wSOL -> SOL", swappableWsol.toString());
     if (!config.dryRun) {
@@ -1425,24 +1708,7 @@ export const runBuyback = async (env: Env): Promise<void> => {
   }
 
   const solLamports = await getSolBalance(connection, owner);
-  const availableSol = solLamports > config.reserveLamports
-    ? solLamports - config.reserveLamports
-    : 0n;
-
-  let floorLamports: bigint;
-  try {
-    floorLamports = await getFloorPriceLamports(config);
-  } catch (error) {
-    console.error("[buyback] Failed to load floor price", error);
-    return;
-  }
-  if (availableSol < floorLamports) {
-    console.log("[buyback] Floor not reached", {
-      available: availableSol.toString(),
-      floor: floorLamports.toString(),
-    });
-    return;
-  }
+  const availableSol = amountAfterReserve(solLamports, config.reserveLamports);
 
   let listing: FloorListing;
   try {
@@ -1452,7 +1718,7 @@ export const runBuyback = async (env: Env): Promise<void> => {
     return;
   }
   if (listing.priceLamports > availableSol) {
-    console.log("[buyback] Listing exceeds available SOL", {
+    console.log("[buyback] Buyback target not reached", {
       listing: listing.priceLamports.toString(),
       available: availableSol.toString(),
     });
@@ -1514,16 +1780,11 @@ export const runBuyback = async (env: Env): Promise<void> => {
   }
 
   try {
-    const burnTx = await requestIncineratorTx(
+    const burnSig = await burnNftAsset(
       config,
-      listing.tokenMint,
-      owner.toBase58(),
-    );
-    const burnSig = await sendTransaction(
       connection,
       keypair,
-      burnTx,
-      "buyback-burn",
+      listing.tokenMint,
     );
     console.log("[buyback] Burn confirmed", burnSig);
   } catch (error) {

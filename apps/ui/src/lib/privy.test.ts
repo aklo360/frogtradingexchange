@@ -29,11 +29,49 @@ describe("Privy account helpers", () => {
         id: "wallet-id",
         address: "9p9UcNW4QaAcw6pRAMFtaJHuNChL6dFFnbYzARTnJSWY",
         embedded: true,
+        walletIndex: null,
       },
       {
         id: null,
         address: "External1111111111111111111111111111111111",
         embedded: false,
+        walletIndex: null,
+      },
+    ]);
+  });
+
+  it("orders embedded wallets by their stable Privy wallet index", () => {
+    expect(
+      getPrivySolanaWallets([
+        {
+          type: "wallet",
+          chainType: "solana",
+          address: "So11111111111111111111111111111111111111112",
+          walletClientType: "privy-v2",
+          walletIndex: 1,
+          id: "wallet-2",
+        },
+        {
+          type: "wallet",
+          chainType: "solana",
+          address: "11111111111111111111111111111111",
+          walletClientType: "privy",
+          walletIndex: 0,
+          id: "wallet-1",
+        },
+      ]),
+    ).toEqual([
+      {
+        id: "wallet-1",
+        address: "11111111111111111111111111111111",
+        embedded: true,
+        walletIndex: 0,
+      },
+      {
+        id: "wallet-2",
+        address: "So11111111111111111111111111111111111111112",
+        embedded: true,
+        walletIndex: 1,
       },
     ]);
   });
@@ -55,7 +93,7 @@ describe("Privy account helpers", () => {
     });
   });
 
-  it("includes every Privy-linked Solana wallet in profile NFT holdings", () => {
+  it("includes one embedded wallet and every read-only portfolio wallet", () => {
     expect(
       getProfileNftWalletAddresses(
         [
@@ -63,11 +101,19 @@ describe("Privy account helpers", () => {
             id: "current-wallet",
             address: "Bru511111111111111111111111111111111111111",
             embedded: true,
+            walletIndex: 0,
+          },
+          {
+            id: "perps-wallet",
+            address: "So11111111111111111111111111111111111111112",
+            embedded: true,
+            walletIndex: 1,
           },
           {
             id: "recovered-wallet",
             address: "9p9UcNW4QaAcw6pRAMFtaJHuNChL6dFFnbYzARTnJSWY",
             embedded: false,
+            walletIndex: null,
           },
         ],
         "Connected111111111111111111111111111111111",

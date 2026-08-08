@@ -1,16 +1,17 @@
 "use client";
 
 import { Buffer } from "buffer";
+import bs58 from "bs58";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { useWallet, useConnection } from "@solana/wallet-adapter-react";
-import { useWalletModal } from "@solana/wallet-adapter-react-ui";
+import { useSignAndSendTransaction } from "@privy-io/react-auth/solana";
 import {
   AddressLookupTableAccount,
   LAMPORTS_PER_SOL,
   PublicKey,
   type RpcResponseAndContext,
   type SignatureResult,
+  type SimulatedTransactionResponse,
   TransactionInstruction,
   TransactionMessage,
   VersionedTransaction,
@@ -22,6 +23,8 @@ import {
   type QuotePreviewResponse,
 } from "@/lib/hooks/useQuotePreview";
 import { buildApiUrl } from "@/lib/api";
+import { usePublicWallet } from "@/providers/PublicWalletProvider";
+import { useSolanaConnection } from "@/providers/SolanaProvider";
 import { toBaseUnits } from "@/lib/solana/validation";
 import type { TokenOption } from "@/lib/tokens";
 import {
@@ -54,6 +57,30 @@ const assertConfirmedSwap = (
       `Swap failed on-chain: ${JSON.stringify(confirmation.value.err)}`,
     );
   }
+};
+
+const assertSimulatedSwap = (
+  simulation: RpcResponseAndContext<SimulatedTransactionResponse>,
+) => {
+  if (!simulation.value.err) return;
+
+  const usefulLog = simulation.value.logs
+    ?.slice()
+    .reverse()
+    .find(
+      (line) =>
+        line.includes("Program log: Error:") ||
+        line.includes("failed: custom program error"),
+    );
+  const detail = usefulLog
+    ?.replace(/^Program log:\s*/, "")
+    .replace(/^Program \S+ failed:\s*/, "");
+
+  throw new Error(
+    `Swap route failed before signing: ${
+      detail ?? JSON.stringify(simulation.value.err)
+    }`,
+  );
 };
 
 const formatNumber = (value: number, maximumFractionDigits = 6) =>
@@ -93,13 +120,22 @@ export const SwapCard = () => {
     return typeof uiAmount === "number" && Number.isFinite(uiAmount) ? uiAmount : 0;
   };
 
-  const { connection } = useConnection();
-  const { connected, publicKey, disconnect, disconnecting, sendTransaction } =
-    useWallet();
-  const { setVisible } = useWalletModal();
-
-  const walletConnected = Boolean(connected && publicKey);
-  const publicKeyBase58 = publicKey?.toBase58();
+  const connection = useSolanaConnection();
+  const {
+    authenticated,
+    wallet,
+    connecting,
+    disconnecting,
+    connect,
+    disconnect,
+  } = usePublicWallet();
+  const { signAndSendTransaction } = useSignAndSendTransaction();
+  const publicKeyBase58 = wallet?.address;
+  const publicKey = useMemo(
+    () => (publicKeyBase58 ? new PublicKey(publicKeyBase58) : null),
+    [publicKeyBase58],
+  );
+  const walletConnected = Boolean(wallet && publicKey);
 
   const parsedAmount = Number(amountIn);
   const sanitizedAmount = Number.isFinite(parsedAmount) ? parsedAmount : 0;
@@ -489,11 +525,11 @@ export const SwapCard = () => {
 
   const handleSwap = async () => {
     if (!walletConnected) {
-      setVisible(true);
+      connect();
       return;
     }
 
-    if (!publicKey || !sendTransaction) {
+    if (!publicKey || !wallet) {
       setSwapError("Wallet does not support sending transactions");
       return;
     }
@@ -508,14 +544,17 @@ export const SwapCard = () => {
       setSwapError(null);
 
       let transaction: VersionedTransaction;
+      let serializedTransaction: Uint8Array | null = null;
       let confirmationParams: { blockhash: string; lastValidBlockHeight: number } | null =
         null;
 
       const executableQuote = await fetchExecutableQuote();
 
       if (executableQuote.transactionBase64) {
-        const bytes = decodeBase64ToUint8Array(executableQuote.transactionBase64);
-        transaction = VersionedTransaction.deserialize(bytes);
+        serializedTransaction = decodeBase64ToUint8Array(
+          executableQuote.transactionBase64,
+        );
+        transaction = VersionedTransaction.deserialize(serializedTransaction);
       } else {
         const built = await buildTransactionFromInstructions(executableQuote);
         transaction = built.transaction;
@@ -525,9 +564,22 @@ export const SwapCard = () => {
         };
       }
 
-      const signature = await sendTransaction(transaction, connection, {
-        skipPreflight: false,
+      const simulation = await connection.simulateTransaction(transaction, {
+        commitment: "processed",
+        replaceRecentBlockhash: true,
+        sigVerify: false,
       });
+      assertSimulatedSwap(simulation);
+
+      const { signature: signatureBytes } = await signAndSendTransaction({
+        transaction: serializedTransaction ?? transaction.serialize(),
+        wallet,
+        options: {
+          skipPreflight: false,
+          commitment: "confirmed",
+        },
+      });
+      const signature = bs58.encode(signatureBytes);
 
       const confirmation = confirmationParams
         ? await connection.confirmTransaction(
@@ -554,7 +606,10 @@ export const SwapCard = () => {
   };
 
   const primaryActionLabel = (() => {
-    if (!walletConnected) return "Connect Wallet";
+    if (connecting) return "Connecting...";
+    if (!walletConnected) {
+      return authenticated ? "Connect Wallet" : "Connect Wallet / Sign in";
+    }
     if (isSwapping) return "Swapping...";
     if (hasExecutableQuote) return "Swap";
     if (quoteState.status === "loading") return "Fetching quote...";
@@ -567,7 +622,7 @@ export const SwapCard = () => {
 
   const handlePrimaryAction = () => {
     if (!walletConnected) {
-      setVisible(true);
+      connect();
       return;
     }
 

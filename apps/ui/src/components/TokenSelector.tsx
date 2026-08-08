@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { PublicKey } from "@solana/web3.js";
-import { useConnection } from "@solana/wallet-adapter-react";
 import type { TokenOption } from "@/lib/tokens";
 import {
   DEFAULT_TOKEN_MAP,
@@ -11,11 +10,15 @@ import {
   TRENDING_TOKEN_MINTS,
   formatMintAddress,
 } from "@/lib/tokens";
+import { useSolanaConnection } from "@/providers/SolanaProvider";
 import styles from "./SwapCard.module.css";
 
 const API_BASE = "https://lite-api.jup.ag/tokens/v2";
 const SUGGESTED_LIMIT = 12;
 const SEARCH_LIMIT = 200;
+const EXCLUDED_SUGGESTED_MINTS = new Set([
+  "H4phNbsqjV5rqk8u6FUACTLB6rNZRTAPGnBb8KXJpump",
+]);
 
 type JupiterToken = {
   id: string;
@@ -139,7 +142,10 @@ const isValidMintAddress = (value: string) => {
 };
 
 const buildSuggestedList = (candidates: TokenOption[]) => {
-  const featuredTokens = DEFAULT_TOKEN_OPTIONS.filter((token) => token.featured);
+  const featuredTokens = DEFAULT_TOKEN_OPTIONS.filter(
+    (token) =>
+      token.featured && !EXCLUDED_SUGGESTED_MINTS.has(token.mint),
+  );
   const seen = new Set<string>();
   const ordered: TokenOption[] = [];
 
@@ -150,6 +156,7 @@ const buildSuggestedList = (candidates: TokenOption[]) => {
   );
 
   for (const token of candidates) {
+    if (EXCLUDED_SUGGESTED_MINTS.has(token.mint)) continue;
     if (token.featured) continue;
     if (seen.has(token.mint)) continue;
     ordered.push(token);
@@ -165,6 +172,7 @@ const buildSuggestedList = (candidates: TokenOption[]) => {
 
   if (ordered.length < SUGGESTED_LIMIT) {
     for (const token of candidates) {
+      if (EXCLUDED_SUGGESTED_MINTS.has(token.mint)) continue;
       if (seen.has(token.mint)) continue;
       ordered.push(token);
       seen.add(token.mint);
@@ -190,7 +198,7 @@ export const TokenSelector = ({
   onSelect,
   disallowMint,
 }: TokenSelectorProps) => {
-  const { connection } = useConnection();
+  const connection = useSolanaConnection();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const trimmedQuery = search.trim();

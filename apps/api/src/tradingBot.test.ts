@@ -4,6 +4,10 @@ import { encode as encodeMsgpack } from "msgpackr";
 import type { Env } from "./env";
 import {
   copyTradePumpFunExclusionError,
+  deltaNeutralPreviewValue,
+  ensureImperialSbfReferral,
+  getAuthenticatedTradingBotPerpsWalletSnapshot,
+  getManagedPrivyWallet,
   getTradingBotAccount,
   getTradingBotActivity,
   getTradingBotAutoBuyConfigs,
@@ -12,13 +16,20 @@ import {
   getTradingBotConfig,
   getTradingBotOrders,
   getTradingBotOperatorReviews,
+  getTradingBotPerpsStatus,
   getTradingBotPnl,
   getTradingBotReferrals,
   isPumpFunBondingCurveTransaction,
+  postTradingBotDeltaNeutralPreview,
+  postTradingBotDeltaNeutralStart,
+  postTradingBotDeltaNeutralStatus,
+  postTradingBotDeltaNeutralStop,
   postTradingBotControlCode,
+  postTradingBotControlImperial,
   postTradingBotControlPreference,
   postTradingBotControlSession,
   postTradingBotControlWallet,
+  postTradingBotSetupReset,
   getTradingBotCopyTradeConfigs,
   postTradingBotAutoBuyCancel,
   postTradingBotAutoBuyExecutionStatus,
@@ -63,9 +74,12 @@ import {
   postTradingBotWithdrawalExecution,
   postTradingBotWithdrawalExecutionStatus,
   postTradingBotWithdrawalValidation,
+  PrivyWalletRpcError,
+  privyRpcFailureWasNotBroadcast,
   runTradingBotAdvancedAutomationMonitors,
   runTradingBotScheduledOrders,
   selectTradingBotAccountWallet,
+  signAndSendManagedSolanaTransaction,
 } from "./tradingBot";
 
 const originalFetch = globalThis.fetch;
@@ -133,6 +147,7 @@ const fakeTradingBotAccounts = (
 const storedAccount = (overrides: Record<string, unknown> = {}) => ({
   telegramUserId: "123456",
   solanaWalletAddress: "So11111111111111111111111111111111111111112",
+  wallets: [],
   settings: {
     slippageBps: 400,
     priorityFee: 1000,
@@ -253,6 +268,93 @@ const installTitanQuoteWebSocketMock = (input: {
   globalThis.WebSocket = FakeTitanWebSocket as unknown as typeof WebSocket;
 };
 
+describe("Imperial SBF referral attribution", () => {
+  const wallet = "So11111111111111111111111111111111111111112";
+
+  it("keeps reconnects already attributed to sbf idempotent", async () => {
+    const fetcher = vi.fn(async () =>
+      Response.json({
+        referredBy: {
+          wallet: "SbfReferrer111111111111111111111111111111111",
+          username: "sbf",
+        },
+      }),
+    );
+
+    await expect(
+      ensureImperialSbfReferral(wallet, fetcher as typeof fetch),
+    ).resolves.toEqual({ referrerUsername: "sbf" });
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
+  it("registers new wallets through the sbf referral and verifies it", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ referredBy: null }))
+      .mockResolvedValueOnce(Response.json({ status: "created" }))
+      .mockResolvedValueOnce(
+        Response.json({
+          referredBy: {
+            wallet: "SbfReferrer111111111111111111111111111111111",
+            username: "sbf",
+          },
+        }),
+      );
+
+    await expect(
+      ensureImperialSbfReferral(wallet, fetcher as typeof fetch),
+    ).resolves.toEqual({ referrerUsername: "sbf" });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+
+    const [url, init] = fetcher.mock.calls[1] as [
+      string,
+      RequestInit,
+    ];
+    expect(url).toBe(
+      "https://api.imperial.space/api/v1/passthrough/referrals",
+    );
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({
+      refereeWallet: wallet,
+      referrerUsername: "sbf",
+    });
+  });
+
+  it("rejects wallets attributed to a different referrer", async () => {
+    const fetcher = vi.fn(async () =>
+      Response.json({
+        referredBy: {
+          wallet: "OtherReferrer1111111111111111111111111111111",
+          username: "someone-else",
+        },
+      }),
+    );
+
+    await expect(
+      ensureImperialSbfReferral(wallet, fetcher as typeof fetch),
+    ).resolves.toEqual({
+      error: "This Imperial account already uses a different referral",
+      status: 409,
+    });
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
+  it("fails closed when Imperial does not confirm the sbf referral", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ referredBy: null }))
+      .mockResolvedValueOnce(Response.json({ status: "created" }))
+      .mockResolvedValueOnce(Response.json({ referredBy: null }));
+
+    await expect(
+      ensureImperialSbfReferral(wallet, fetcher as typeof fetch),
+    ).resolves.toEqual({
+      error: "Imperial did not confirm the SBF referral",
+      status: 502,
+    });
+  });
+});
+
 describe("trading bot config", () => {
   it("exposes non-secret Ribbot routes and hides managed wallets until bot auth is configured", async () => {
     const response = await getTradingBotConfig({
@@ -272,6 +374,11 @@ describe("trading bot config", () => {
       marketRiskEndpoint: string;
       referralsEndpoint: string;
       activityEndpoint: string;
+      perpsStatusEndpoint: string;
+      deltaNeutralPreviewEndpoint: string;
+      deltaNeutralStartEndpoint: string;
+      deltaNeutralStatusEndpoint: string;
+      deltaNeutralStopEndpoint: string;
       ordersEndpoint: string;
       ordersStorageEndpoint: string;
       ordersCancelEndpoint: string;
@@ -302,7 +409,9 @@ describe("trading bot config", () => {
       preferencesEndpoint: string;
       accountEndpoint: string;
       controlCodeEndpoint: string;
+      setupResetEndpoint: string;
       controlSessionEndpoint: string;
+      controlImperialEndpoint: string;
       controlPreferencesEndpoint: string;
       controlWalletEndpoint: string;
       scheduler: {
@@ -373,6 +482,18 @@ describe("trading bot config", () => {
         referrals: boolean;
         serverReferralStorage: boolean;
         rewardTracking: boolean;
+        deltaNeutral: boolean;
+        liveDeltaNeutral: boolean;
+      };
+      perps: {
+        defaultStrategy: string;
+        defaultPreset: string;
+        profileIndex: number;
+        minimumProfileUsdc: number;
+        liveEntryCapUsd: number;
+        dailyBudgetUsd: number;
+        maxCycles: number;
+        explicitConfirmationRequired: boolean;
       };
       botAuth: { required: boolean; configured: boolean };
     };
@@ -395,6 +516,21 @@ describe("trading bot config", () => {
     expect(data.marketRiskEndpoint).toBe("/api/frogx/trading-bot/market-risk");
     expect(data.referralsEndpoint).toBe("/api/frogx/trading-bot/referrals");
     expect(data.activityEndpoint).toBe("/api/frogx/trading-bot/activity");
+    expect(data.perpsStatusEndpoint).toBe(
+      "/api/frogx/trading-bot/perps/status",
+    );
+    expect(data.deltaNeutralPreviewEndpoint).toBe(
+      "/api/frogx/trading-bot/perps/delta-neutral/preview",
+    );
+    expect(data.deltaNeutralStartEndpoint).toBe(
+      "/api/frogx/trading-bot/perps/delta-neutral/start",
+    );
+    expect(data.deltaNeutralStatusEndpoint).toBe(
+      "/api/frogx/trading-bot/perps/delta-neutral/status",
+    );
+    expect(data.deltaNeutralStopEndpoint).toBe(
+      "/api/frogx/trading-bot/perps/delta-neutral/stop",
+    );
     expect(data.ordersEndpoint).toBe("/api/frogx/trading-bot/orders/validate");
     expect(data.ordersStorageEndpoint).toBe("/api/frogx/trading-bot/orders");
     expect(data.ordersCancelEndpoint).toBe(
@@ -473,8 +609,14 @@ describe("trading bot config", () => {
     expect(data.controlCodeEndpoint).toBe(
       "/api/frogx/trading-bot/control/code",
     );
+    expect(data.setupResetEndpoint).toBe(
+      "/api/frogx/trading-bot/setup/reset",
+    );
     expect(data.controlSessionEndpoint).toBe(
       "/api/frogx/trading-bot/control/session",
+    );
+    expect(data.controlImperialEndpoint).toBe(
+      "/api/frogx/trading-bot/control/imperial",
     );
     expect(data.controlPreferencesEndpoint).toBe(
       "/api/frogx/trading-bot/control/preferences",
@@ -550,6 +692,18 @@ describe("trading bot config", () => {
     expect(data.capabilities.referrals).toBe(true);
     expect(data.capabilities.serverReferralStorage).toBe(false);
     expect(data.capabilities.rewardTracking).toBe(false);
+    expect(data.capabilities.deltaNeutral).toBe(false);
+    expect(data.capabilities.liveDeltaNeutral).toBe(false);
+    expect(data.perps).toEqual({
+      defaultStrategy: "delta_neutral",
+      defaultPreset: "low",
+      profileIndex: 1,
+      minimumProfileUsdc: 50,
+      liveEntryCapUsd: 60,
+      dailyBudgetUsd: 5,
+      maxCycles: 1,
+      explicitConfirmationRequired: true,
+    });
     expect(data.botAuth).toEqual({ required: true, configured: false });
   });
 
@@ -657,6 +811,195 @@ describe("trading bot config", () => {
     expect(data.capabilities.liveBundleBuy).toBe(true);
     expect(data.capabilities.liveAutoSell).toBe(false);
   });
+
+  it("keeps Delta Neutral disabled until both service and live gates are explicit", async () => {
+    const base = {
+      RIBBOT_TRADING_BOT_TOKEN: "ribbot-token",
+      TRADING_BOT_ACCOUNTS: fakeTradingBotAccounts(() =>
+        Response.json({ status: "ready" }),
+      ),
+      PERP_FARMER_ENABLED: "true",
+      PERP_FARMER_SERVICE_URL: "https://perp-farmer.internal",
+      PERP_FARMER_SERVICE_TOKEN: "service-token",
+    } as Env;
+    const previewOnly = (await (
+      await getTradingBotConfig(base)
+    ).json()) as {
+      capabilities: { deltaNeutral: boolean; liveDeltaNeutral: boolean };
+    };
+    const live = (await (
+      await getTradingBotConfig({
+        ...base,
+        PERP_FARMER_LIVE_EXECUTION_ENABLED: "true",
+      })
+    ).json()) as {
+      capabilities: { deltaNeutral: boolean; liveDeltaNeutral: boolean };
+    };
+
+    expect(previewOnly.capabilities).toMatchObject({
+      deltaNeutral: true,
+      liveDeltaNeutral: false,
+    });
+    expect(live.capabilities).toMatchObject({
+      deltaNeutral: true,
+      liveDeltaNeutral: true,
+    });
+  });
+});
+
+describe("trading bot Delta Neutral proxy", () => {
+  const envWithStore = (
+    handler: (request: Request) => Promise<Response> | Response,
+  ) =>
+    ({
+      RIBBOT_TRADING_BOT_TOKEN: "ribbot-token",
+      TRADING_BOT_ACCOUNTS: fakeTradingBotAccounts(handler),
+    }) as Env;
+
+  it("requires bot auth and explicit live confirmation", async () => {
+    const handler = vi.fn(() => Response.json({ status: "ready" }));
+    const unauthorized = await postTradingBotDeltaNeutralPreview(
+      requestJson(
+        { telegramUserId: "123456" },
+        undefined,
+        "/api/frogx/trading-bot/perps/delta-neutral/preview",
+      ),
+      envWithStore(handler),
+    );
+    const unconfirmed = await postTradingBotDeltaNeutralStart(
+      requestJson(
+        {
+          telegramUserId: "123456",
+          idempotencyKey: "delta-neutral:12345678",
+          confirmLive: false,
+        },
+        { Authorization: "Bearer ribbot-token" },
+        "/api/frogx/trading-bot/perps/delta-neutral/start",
+      ),
+      envWithStore(handler),
+    );
+
+    expect(unauthorized.status).toBe(401);
+    expect(unconfirmed.status).toBe(400);
+    await expect(unconfirmed.json()).resolves.toEqual({
+      error: "confirmLive must be true",
+    });
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("forwards only canonical identity and start fields to the account store", async () => {
+    const requests: Array<{ path: string; body: unknown }> = [];
+    const env = envWithStore(async (request) => {
+      requests.push({
+        path: new URL(request.url).pathname,
+        body: await request.json(),
+      });
+      return Response.json({ status: "ready" });
+    });
+    const headers = { Authorization: "Bearer ribbot-token" };
+
+    const responses = await Promise.all([
+      postTradingBotDeltaNeutralPreview(
+        requestJson(
+          { telegramUserId: "123456", strategy: "untrusted" },
+          headers,
+        ),
+        env,
+      ),
+      postTradingBotDeltaNeutralStart(
+        requestJson(
+          {
+            telegramUserId: "123456",
+            idempotencyKey: "delta-neutral:12345678",
+            confirmLive: true,
+            preset: "untrusted",
+          },
+          headers,
+        ),
+        env,
+      ),
+      postTradingBotDeltaNeutralStatus(
+        requestJson({ telegramUserId: "123456" }, headers),
+        env,
+      ),
+      postTradingBotDeltaNeutralStop(
+        requestJson({ telegramUserId: "123456" }, headers),
+        env,
+      ),
+    ]);
+
+    expect(responses.every((response) => response.ok)).toBe(true);
+    expect(requests).toEqual([
+      {
+        path: "/delta-neutral/preview",
+        body: { telegramUserId: "123456" },
+      },
+      {
+        path: "/delta-neutral/start",
+        body: {
+          telegramUserId: "123456",
+          idempotencyKey: "delta-neutral:12345678",
+          confirmLive: true,
+        },
+      },
+      {
+        path: "/delta-neutral/status",
+        body: { telegramUserId: "123456" },
+      },
+      {
+        path: "/delta-neutral/stop",
+        body: { telegramUserId: "123456" },
+      },
+    ]);
+  });
+});
+
+describe("Delta Neutral preview normalization", () => {
+  const wallet = "So11111111111111111111111111111111111111112";
+  const preview = (liveEntryCapUsd: number) =>
+    deltaNeutralPreviewValue(
+      {
+        strategy: "delta_neutral",
+        preset: "low",
+        wallet,
+        profileIndex: 1,
+        profileAddress: "Vote111111111111111111111111111111111111111",
+        profileUsdc: 70.67903,
+        minimumProfileUsdc: 50,
+        profileFunded: true,
+        liveReady: true,
+        liveEntryCapUsd,
+        maxCycles: 1,
+        blockers: [],
+      },
+      wallet,
+    );
+
+  it("keeps a matching service entry cap ready", () => {
+    expect(preview(60)).toMatchObject({
+      profileAddress: "Vote111111111111111111111111111111111111111",
+      liveReady: true,
+      liveEntryCapUsd: 60,
+      serviceLiveEntryCapUsd: 60,
+      entryCapCompatible: true,
+      blockers: [],
+    });
+  });
+
+  it("preserves the profile but blocks a service entry cap above the FTX limit", () => {
+    expect(preview(75)).toMatchObject({
+      profileAddress: "Vote111111111111111111111111111111111111111",
+      profileUsdc: 70.67903,
+      profileFunded: true,
+      liveReady: false,
+      liveEntryCapUsd: 60,
+      serviceLiveEntryCapUsd: 75,
+      entryCapCompatible: false,
+      blockers: [
+        "Delta Neutral requires a $75 live entry cap, above the $60 Frog Trading Exchange beta limit.",
+      ],
+    });
+  });
 });
 
 describe("trading bot wallet provisioning", () => {
@@ -737,7 +1080,7 @@ describe("trading bot wallet provisioning", () => {
     expect(data).toEqual({ error: "Unauthorized" });
   });
 
-  it("syncs every linked Privy Solana wallet into FTX account storage", async () => {
+  it("syncs only the first linked Privy Solana wallet into FTX account storage", async () => {
     const wallets = [
       {
         type: "wallet",
@@ -773,9 +1116,10 @@ describe("trading bot wallet provisioning", () => {
       privyWalletId: "wallet_1",
       solanaWalletAddress: wallets[0].address,
       activeWalletId: "wallet_1",
-      wallets: wallets.slice(0, 2).map((wallet, index) => ({
+      wallets: wallets.slice(0, 1).map((wallet) => ({
         walletId: wallet.id,
-        label: `Wallet ${index + 1}`,
+        label: "Spot & NFT Wallet (Privy)",
+        role: "spot_nft",
         walletSource: "privy",
         privyUserId: "user_123",
         privyWalletId: wallet.id,
@@ -800,10 +1144,9 @@ describe("trading bot wallet provisioning", () => {
             wallets: Array<{ walletId: string; solanaWalletAddress: string }>;
           };
           expect(body.privyUserId).toBe("user_123");
-          expect(body.wallets).toHaveLength(2);
+          expect(body.wallets).toHaveLength(1);
           expect(body.wallets.map((wallet) => wallet.walletId)).toEqual([
             "wallet_1",
-            "wallet_2",
           ]);
           return Response.json({ status: "ready", account });
         }),
@@ -816,19 +1159,92 @@ describe("trading bot wallet provisioning", () => {
 
     expect(response.status).toBe(200);
     expect(data.activeWalletId).toBe("wallet_1");
-    expect(data.wallets.map((wallet) => wallet.walletId)).toEqual([
-      "wallet_1",
-      "wallet_2",
+    expect(data.wallets.map((wallet) => wallet.walletId)).toEqual(["wallet_1"]);
+  });
+
+  it("reuses an existing Privy wallet without creating a second wallet", async () => {
+    const spotAddress = "11111111111111111111111111111111";
+    const privyFetch = vi.fn(async (input) => {
+      const url = String(input);
+      expect(url).toBe(
+        "https://api.privy.io/v1/users/telegram/telegram_user_id",
+      );
+      return Response.json({
+        id: "user_123",
+        linked_accounts: [
+          {
+            type: "wallet",
+            chain_type: "solana",
+            wallet_client_type: "privy",
+            wallet_index: 0,
+            id: "wallet_1",
+            address: spotAddress,
+          },
+        ],
+      });
+    });
+    globalThis.fetch = privyFetch as typeof fetch;
+
+    const response = await postTradingBotWallet(
+      requestJson(
+        { telegramUserId: "123456", username: "ribbit" },
+        { Authorization: "Bearer ribbot-token" },
+      ),
+      {
+        PRIVY_APP_ID: "privy-app",
+        PRIVY_APP_SECRET: "privy-secret",
+        RIBBOT_TRADING_BOT_TOKEN: "ribbot-token",
+        TRADING_BOT_ACCOUNTS: fakeTradingBotAccounts(async (request) => {
+          expect(new URL(request.url).pathname).toBe("/wallet/sync");
+          const body = (await request.json()) as {
+            privyUserId: string;
+            wallets: Array<{
+              walletId: string;
+              label: string;
+              role: string;
+              solanaWalletAddress: string;
+            }>;
+          };
+          expect(body.wallets).toEqual([
+            expect.objectContaining({
+              walletId: "wallet_1",
+              label: "Spot & NFT Wallet (Privy)",
+              role: "spot_nft",
+              solanaWalletAddress: spotAddress,
+            }),
+          ]);
+          const account = storedAccount({
+            walletSource: "privy",
+            privyUserId: body.privyUserId,
+            privyWalletId: "wallet_1",
+            solanaWalletAddress: spotAddress,
+            activeWalletId: "wallet_1",
+            wallets: body.wallets,
+          });
+          return Response.json({ status: "ready", account });
+        }),
+      } as Env,
+    );
+    const data = (await response.json()) as {
+      activeWalletId: string;
+      wallets: Array<{ walletId: string; role: string }>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(data.activeWalletId).toBe("wallet_1");
+    expect(data.wallets).toEqual([
+      expect.objectContaining({ walletId: "wallet_1", role: "spot_nft" }),
     ]);
+    expect(privyFetch).toHaveBeenCalledOnce();
   });
 
   it("selects an active wallet through authenticated FTX account storage", async () => {
     const account = storedAccount({
       walletSource: "privy",
       privyUserId: "user_123",
-      privyWalletId: "wallet_2",
+      privyWalletId: "wallet_1",
       solanaWalletAddress: "So11111111111111111111111111111111111111112",
-      activeWalletId: "wallet_2",
+      activeWalletId: "wallet_1",
       wallets: [],
     });
     const response = await postTradingBotWallet(
@@ -836,7 +1252,7 @@ describe("trading bot wallet provisioning", () => {
         {
           telegramUserId: "123456",
           action: "select",
-          walletId: "wallet_2",
+          walletId: "wallet_1",
         },
         { Authorization: "Bearer ribbot-token" },
       ),
@@ -846,7 +1262,7 @@ describe("trading bot wallet provisioning", () => {
           expect(new URL(request.url).pathname).toBe("/wallet/select");
           expect(await request.json()).toEqual({
             telegramUserId: "123456",
-            walletId: "wallet_2",
+            walletId: "wallet_1",
           });
           return Response.json({ status: "ready", account });
         }),
@@ -858,7 +1274,7 @@ describe("trading bot wallet provisioning", () => {
     };
 
     expect(response.status).toBe(200);
-    expect(data.activeWalletId).toBe("wallet_2");
+    expect(data.activeWalletId).toBe("wallet_1");
     expect(data.solanaWalletAddress).toBe(
       "So11111111111111111111111111111111111111112",
     );
@@ -874,7 +1290,39 @@ describe("trading bot wallet provisioning", () => {
       wallets: [
         {
           walletId: "wallet_1",
-          label: "Wallet 1",
+          label: "Spot & NFT Wallet (Privy)",
+          role: "spot_nft",
+          walletSource: "privy",
+          privyUserId: "user_123",
+          privyWalletId: "wallet_1",
+          solanaWalletAddress: "11111111111111111111111111111111",
+          createdAt: "2026-07-12T00:00:00.000Z",
+        },
+      ],
+    }) as Parameters<typeof selectTradingBotAccountWallet>[0];
+
+    const result = selectTradingBotAccountWallet(account, "wallet_1");
+    expect(result).toMatchObject({
+      account: {
+        activeWalletId: "wallet_1",
+        privyWalletId: "wallet_1",
+        solanaWalletAddress: "11111111111111111111111111111111",
+      },
+    });
+  });
+
+  it("rejects selecting a read-only portfolio wallet for trading", () => {
+    const account = storedAccount({
+      walletSource: "privy",
+      privyUserId: "user_123",
+      privyWalletId: "wallet_1",
+      solanaWalletAddress: "11111111111111111111111111111111",
+      activeWalletId: "wallet_1",
+      wallets: [
+        {
+          walletId: "wallet_1",
+          label: "Spot & NFT Wallet (Privy)",
+          role: "spot_nft",
           walletSource: "privy",
           privyUserId: "user_123",
           privyWalletId: "wallet_1",
@@ -882,25 +1330,26 @@ describe("trading bot wallet provisioning", () => {
           createdAt: "2026-07-12T00:00:00.000Z",
         },
         {
-          walletId: "wallet_2",
-          label: "Wallet 2",
-          walletSource: "privy",
-          privyUserId: "user_123",
-          privyWalletId: "wallet_2",
-          solanaWalletAddress: "So11111111111111111111111111111111111111112",
+          walletId: "external:So11111111111111111111111111111111111111112",
+          label: "Portfolio Wallet (Read only)",
+          role: "portfolio",
+          walletSource: "external",
+          solanaWalletAddress:
+            "So11111111111111111111111111111111111111112",
           createdAt: "2026-07-12T00:00:00.000Z",
         },
       ],
-    });
+    }) as Parameters<typeof selectTradingBotAccountWallet>[0];
 
-    const result = selectTradingBotAccountWallet(account, "wallet_2");
-    expect(result).toMatchObject({
-      account: {
-        activeWalletId: "wallet_2",
-        privyWalletId: "wallet_2",
-        solanaWalletAddress: "So11111111111111111111111111111111111111112",
-      },
+    expect(
+      selectTradingBotAccountWallet(
+        account,
+        "external:So11111111111111111111111111111111111111112",
+      ),
+    ).toEqual({
+      error: "Read-only portfolio wallets cannot be used for trading",
     });
+    expect(account.activeWalletId).toBe("wallet_1");
   });
 });
 
@@ -946,6 +1395,13 @@ describe("trading bot account state", () => {
     const data = (await response.json()) as {
       status: string;
       account: { telegramUserId: string; watchlist: string[] };
+      setup: {
+        walletReady: boolean;
+        automationSignerReady: boolean;
+        imperialConnected: boolean;
+        botAccessEnabled: boolean;
+        complete: boolean;
+      };
     };
 
     expect(response.status).toBe(200);
@@ -954,6 +1410,81 @@ describe("trading bot account state", () => {
     expect(data.account.watchlist).toEqual([
       "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
     ]);
+    expect(data.setup).toEqual({
+      walletReady: false,
+      automationSignerReady: false,
+      imperialConnected: false,
+      botAccessEnabled: true,
+      complete: false,
+    });
+  });
+
+  it("reports setup complete only when wallet, signer, access, and Imperial are ready", async () => {
+    const account = storedAccount({
+      walletSource: "privy",
+      privyUserId: "user_123",
+      privyWalletId: "wallet_123",
+      solanaWalletAddress:
+        "So11111111111111111111111111111111111111112",
+    });
+    globalThis.fetch = vi.fn(async (input) => {
+      expect(String(input)).toBe(
+        "https://api.privy.io/v1/wallets/wallet_123",
+      );
+      return Response.json({
+        id: "wallet_123",
+        address: "So11111111111111111111111111111111111111112",
+        chain_type: "solana",
+        additional_signers: [
+          {
+            signer_id: "auth-key",
+            override_policy_ids: ["spot-nft-policy"],
+          },
+        ],
+      });
+    }) as typeof fetch;
+
+    const response = await getTradingBotAccount(
+      new Request(
+        "https://frogx.example/api/frogx/trading-bot/account?telegramUserId=123456",
+        {
+          headers: { Authorization: "Bearer ribbot-token" },
+        },
+      ),
+      {
+        RIBBOT_TRADING_BOT_TOKEN: "ribbot-token",
+        PRIVY_APP_ID: "privy-app",
+        PRIVY_APP_SECRET: "privy-secret",
+        PRIVY_AUTHORIZATION_KEY_ID: "auth-key",
+        PRIVY_AUTHORIZATION_PRIVATE_KEY: "private-key",
+        PRIVY_WALLET_POLICY_IDS: "spot-nft-policy",
+        TRADING_BOT_ACCOUNTS: fakeTradingBotAccounts(() =>
+          Response.json({
+            status: "ready",
+            account,
+            setup: { imperialConnected: true },
+          }),
+        ),
+      } as Env,
+    );
+    const data = (await response.json()) as {
+      setup: {
+        walletReady: boolean;
+        automationSignerReady: boolean;
+        imperialConnected: boolean;
+        botAccessEnabled: boolean;
+        complete: boolean;
+      };
+    };
+
+    expect(response.status).toBe(200);
+    expect(data.setup).toEqual({
+      walletReady: true,
+      automationSignerReady: true,
+      imperialConnected: true,
+      botAccessEnabled: true,
+      complete: true,
+    });
   });
 });
 
@@ -1064,6 +1595,80 @@ describe("trading bot control codes", () => {
     expect(data.account.telegramUserId).toBe("123456");
     expect(data.sessionToken).toBe("ABCDEFGHJKLMNPQRSTUVWXYZ23456789");
     expect(data.sessionExpiresAt).toBe("2026-07-04T00:40:00.000Z");
+  });
+
+  it("proxies an Imperial wallet authorization through account storage", async () => {
+    const response = await postTradingBotControlImperial(
+      requestJson(
+        {
+          telegramUserId: "123456",
+          sessionToken: "ABCDEFGHJKLMNPQRSTUVWXYZ23456789",
+          wallet: "So11111111111111111111111111111111111111112",
+          message:
+            "imperial:mobile-connect:So11111111111111111111111111111111111111112:1785452400000",
+          signature:
+            "3vQB7B6MrGQZaxCuFg4oh7xCPNwQvH5G2fYqQ7nS2UQ8F1xPA8Dc9Tmtb4jLk3Rh6s8Ew2aJ6Kp9Nq7Vg5Uo1Zx",
+        },
+        undefined,
+        "/api/frogx/trading-bot/control/imperial",
+      ),
+      {
+        TRADING_BOT_ACCOUNTS: fakeTradingBotAccounts(async (request) => {
+          const url = new URL(request.url);
+          expect(url.pathname).toBe("/control-imperial");
+          const body = (await request.json()) as {
+            telegramUserId: string;
+            sessionToken: string;
+            wallet: string;
+            message: string;
+            signature: string;
+          };
+          expect(body.telegramUserId).toBe("123456");
+          expect(body.sessionToken).toBe(
+            "ABCDEFGHJKLMNPQRSTUVWXYZ23456789",
+          );
+          expect(body.wallet).toBe(
+            "So11111111111111111111111111111111111111112",
+          );
+          expect(body.message).toContain("imperial:mobile-connect:");
+          expect(body.signature).toBeTruthy();
+          return Response.json({
+            status: "connected",
+            connection: {
+              status: "connected",
+              authorityWalletAddress: body.wallet,
+              profileAddress: "Vote111111111111111111111111111111111111111",
+              profileIndex: 1,
+              expiresAt: 1893456000,
+              connectedAt: "2026-07-30T23:00:00.000Z",
+              referrerUsername: "sbf",
+            },
+          });
+        }),
+      } as Env,
+    );
+    const data = (await response.json()) as {
+      status: string;
+      connection: {
+        authorityWalletAddress: string;
+        profileAddress: string;
+        profileIndex: number;
+        expiresAt: number;
+        referrerUsername: string;
+      };
+    };
+
+    expect(response.status).toBe(200);
+    expect(data.status).toBe("connected");
+    expect(data.connection.authorityWalletAddress).toBe(
+      "So11111111111111111111111111111111111111112",
+    );
+    expect(data.connection.profileAddress).toBe(
+      "Vote111111111111111111111111111111111111111",
+    );
+    expect(data.connection.profileIndex).toBe(1);
+    expect(data.connection.expiresAt).toBe(1893456000);
+    expect(data.connection.referrerUsername).toBe("sbf");
   });
 
   it("lets a control session update stored non-secret preferences", async () => {
@@ -1237,6 +1842,274 @@ describe("trading bot control codes", () => {
     expect(data.action).toBe("restore");
     expect(data.account.botAccessRevokedAt).toBeUndefined();
   });
+
+  it("verifies the configured signer on the Spot & NFT wallet", async () => {
+    const account = storedAccount({
+      walletSource: "privy",
+      privyUserId: "user_123",
+      privyWalletId: "wallet_123",
+      wallets: [
+        {
+          walletId: "wallet_123",
+          label: "Spot & NFT Wallet (Privy)",
+          role: "spot_nft",
+          walletSource: "privy",
+          privyUserId: "user_123",
+          privyWalletId: "wallet_123",
+          solanaWalletAddress:
+            "So11111111111111111111111111111111111111112",
+          createdAt: "2026-07-04T00:00:00.000Z",
+        },
+      ],
+    });
+    globalThis.fetch = vi.fn(async (input) => {
+      expect(String(input)).toBe(
+        "https://api.privy.io/v1/wallets/wallet_123",
+      );
+      return Response.json({
+        id: "wallet_123",
+        address: "So11111111111111111111111111111111111111112",
+        chain_type: "solana",
+        additional_signers: [
+          {
+            signer_id: "auth-key",
+            override_policy_ids: ["spot-nft-policy"],
+          },
+        ],
+      });
+    }) as typeof fetch;
+
+    const response = await postTradingBotControlWallet(
+      requestJson(
+        {
+          telegramUserId: "123456",
+          sessionToken: "ABCDEFGHJKLMNPQRSTUVWXYZ23456789",
+          userPublicKey: "So11111111111111111111111111111111111111112",
+          action: "verify_signer",
+        },
+        undefined,
+        "/api/frogx/trading-bot/control/wallet",
+      ),
+      {
+        PRIVY_APP_ID: "privy-app",
+        PRIVY_APP_SECRET: "privy-secret",
+        PRIVY_AUTHORIZATION_KEY_ID: "auth-key",
+        PRIVY_AUTHORIZATION_PRIVATE_KEY: "private-key",
+        PRIVY_WALLET_POLICY_IDS: "spot-nft-policy",
+        TRADING_BOT_ACCOUNTS: fakeTradingBotAccounts(async (request) => {
+          expect(new URL(request.url).pathname).toBe("/control-wallet");
+          return Response.json({
+            status: "signer_check_requested",
+            action: "verify_signer",
+            account,
+            warnings: [],
+            updatedAt: account.updatedAt,
+          });
+        }),
+      } as Env,
+    );
+    const data = (await response.json()) as {
+      automationSignerReady: boolean;
+    };
+
+    expect(response.status).toBe(200);
+    expect(data.automationSignerReady).toBe(true);
+  });
+});
+
+describe("managed Spot & NFT wallet", () => {
+  it("rejects read-only portfolio wallets before Privy execution", async () => {
+    const portfolioAddress = "Vote111111111111111111111111111111111111111";
+    const response = await getManagedPrivyWallet(
+      {
+        TRADING_BOT_ACCOUNTS: fakeTradingBotAccounts(async () =>
+          Response.json({
+            status: "ready",
+            account: storedAccount({
+              wallets: [
+                {
+                  walletId: "portfolio_1",
+                  label: "Portfolio Wallet (Read only)",
+                  role: "portfolio",
+                  walletSource: "external",
+                  solanaWalletAddress: portfolioAddress,
+                  createdAt: "2026-07-04T00:00:00.000Z",
+                },
+              ],
+            }),
+          }),
+        ),
+      } as Env,
+      "123456",
+      portfolioAddress,
+    );
+
+    expect(response).toEqual({
+      error: "Spot and NFT trading requires Spot & NFT Wallet (Privy)",
+      status: 409,
+    });
+  });
+
+  it("returns only the exact Privy Spot & NFT wallet with the configured signer", async () => {
+    const spotAddress = "So11111111111111111111111111111111111111112";
+    globalThis.fetch = vi.fn(async () =>
+      Response.json({
+        id: "wallet_123",
+        address: spotAddress,
+        chain_type: "solana",
+        additional_signers: [
+          {
+            signer_id: "auth-key",
+            override_policy_ids: ["spot-nft-policy"],
+          },
+        ],
+      }),
+    ) as typeof fetch;
+    const response = await getManagedPrivyWallet(
+      {
+        PRIVY_APP_ID: "privy-app",
+        PRIVY_APP_SECRET: "privy-secret",
+        PRIVY_AUTHORIZATION_KEY_ID: "auth-key",
+        PRIVY_AUTHORIZATION_PRIVATE_KEY: "private-key",
+        PRIVY_WALLET_POLICY_IDS: "spot-nft-policy",
+        TRADING_BOT_ACCOUNTS: fakeTradingBotAccounts(async () =>
+          Response.json({
+            status: "ready",
+            account: storedAccount({
+              wallets: [
+                {
+                  walletId: "wallet_123",
+                  label: "Spot & NFT Wallet (Privy)",
+                  role: "spot_nft",
+                  walletSource: "privy",
+                  privyUserId: "user_123",
+                  privyWalletId: "wallet_123",
+                  solanaWalletAddress: spotAddress,
+                  createdAt: "2026-07-04T00:00:00.000Z",
+                },
+              ],
+            }),
+          }),
+        ),
+      } as Env,
+      "123456",
+      spotAddress,
+    );
+
+    expect(response).toEqual({
+      wallet: {
+        walletId: "wallet_123",
+        walletAddress: spotAddress,
+        label: "Spot & NFT Wallet (Privy)",
+      },
+    });
+  });
+
+  it("rejects the Spot & NFT wallet when Ribbot signer access is missing", async () => {
+    const spotAddress = "So11111111111111111111111111111111111111112";
+    globalThis.fetch = vi.fn(async () =>
+      Response.json({
+        id: "wallet_123",
+        address: spotAddress,
+        chain_type: "solana",
+        additional_signers: [],
+      }),
+    ) as typeof fetch;
+    const response = await getManagedPrivyWallet(
+      {
+        PRIVY_APP_ID: "privy-app",
+        PRIVY_APP_SECRET: "privy-secret",
+        PRIVY_AUTHORIZATION_KEY_ID: "auth-key",
+        PRIVY_AUTHORIZATION_PRIVATE_KEY: "private-key",
+        PRIVY_WALLET_POLICY_IDS: "spot-nft-policy",
+        TRADING_BOT_ACCOUNTS: fakeTradingBotAccounts(async () =>
+          Response.json({
+            status: "ready",
+            account: storedAccount({
+              wallets: [
+                {
+                  walletId: "wallet_123",
+                  label: "Spot & NFT Wallet (Privy)",
+                  role: "spot_nft",
+                  walletSource: "privy",
+                  privyUserId: "user_123",
+                  privyWalletId: "wallet_123",
+                  solanaWalletAddress: spotAddress,
+                  createdAt: "2026-07-04T00:00:00.000Z",
+                },
+              ],
+            }),
+          }),
+        ),
+      } as Env,
+      "123456",
+      spotAddress,
+    );
+
+    expect(response).toEqual({
+      error: "Ribbot access is not enabled for Spot & NFT Wallet (Privy)",
+      status: 409,
+      code: "RIBBOT_ACCESS_REQUIRED",
+    });
+  });
+});
+
+describe("trading bot setup reset", () => {
+  it("requires Ribbot auth before resetting setup", async () => {
+    const response = await postTradingBotSetupReset(
+      requestJson(
+        { telegramUserId: "123456" },
+        undefined,
+        "/api/frogx/trading-bot/setup/reset",
+      ),
+      {} as Env,
+    );
+    const data = (await response.json()) as {
+      status: string;
+      required: string[];
+    };
+
+    expect(response.status).toBe(503);
+    expect(data).toEqual({
+      status: "not_configured",
+      required: ["RIBBOT_TRADING_BOT_TOKEN"],
+    });
+  });
+
+  it("proxies authenticated setup resets to account storage", async () => {
+    const response = await postTradingBotSetupReset(
+      requestJson(
+        { telegramUserId: "123456" },
+        { Authorization: "Bearer ribbot-token" },
+        "/api/frogx/trading-bot/setup/reset",
+      ),
+      {
+        RIBBOT_TRADING_BOT_TOKEN: "ribbot-token",
+        TRADING_BOT_ACCOUNTS: fakeTradingBotAccounts(async (request) => {
+          const url = new URL(request.url);
+          expect(url.pathname).toBe("/setup-reset");
+          expect(await request.json()).toEqual({
+            telegramUserId: "123456",
+          });
+          return Response.json({
+            status: "reset",
+            telegramUserId: "123456",
+            walletAddress:
+              "So11111111111111111111111111111111111111112",
+            resetAt: "2026-07-30T22:00:00.000Z",
+          });
+        }),
+      } as Env,
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      status: "reset",
+      telegramUserId: "123456",
+      walletAddress: "So11111111111111111111111111111111111111112",
+      resetAt: "2026-07-30T22:00:00.000Z",
+    });
+  });
 });
 
 describe("trading bot swap building", () => {
@@ -1367,8 +2240,56 @@ describe("trading bot live execution", () => {
 
     expect(response.status).toBe(409);
     expect(data.error).toBe(
-      "Live execution requires an FTX/FrogX-managed Privy wallet",
+      "Live execution requires Spot & NFT Wallet (Privy)",
     );
+  });
+
+  it("does not execute from legacy Privy fields when only a read-only wallet is registered", async () => {
+    globalThis.fetch = vi.fn();
+    const response = await postTradingBotExecution(
+      requestJson(
+        validExecutionBody,
+        { Authorization: "Bearer ribbot-token" },
+        "/api/frogx/trading-bot/execute",
+      ),
+      {
+        RIBBOT_TRADING_BOT_TOKEN: "ribbot-token",
+        TRADING_BOT_LIVE_EXECUTION_ENABLED: "true",
+        PRIVY_APP_ID: "privy-app",
+        PRIVY_APP_SECRET: "privy-secret",
+        PRIVY_AUTHORIZATION_KEY_ID: "auth-key",
+        PRIVY_AUTHORIZATION_PRIVATE_KEY: "not-used-for-read-only-wallet",
+        TRADING_BOT_ACCOUNTS: fakeTradingBotAccounts(() =>
+          Response.json({
+            status: "ready",
+            account: storedAccount({
+              walletSource: "privy",
+              privyUserId: "legacy-user",
+              privyWalletId: "legacy-wallet",
+              wallets: [
+                {
+                  walletId:
+                    "external:So11111111111111111111111111111111111111112",
+                  label: "Portfolio Wallet (Read only)",
+                  role: "portfolio",
+                  walletSource: "external",
+                  solanaWalletAddress:
+                    "So11111111111111111111111111111111111111112",
+                  createdAt: "2026-07-12T00:00:00.000Z",
+                },
+              ],
+            }),
+          }),
+        ),
+      } as Env,
+    );
+    const data = (await response.json()) as { error: string };
+
+    expect(response.status).toBe(409);
+    expect(data.error).toBe(
+      "Live execution requires Spot & NFT Wallet (Privy)",
+    );
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   it("refuses live execution after the control page revokes bot access", async () => {
@@ -1707,6 +2628,79 @@ describe("trading bot live execution", () => {
     expect(data.referenceId).toBe("ribbot-123456-order_123");
     expect(data.signedTransactionAvailable).toBe(true);
     expect(data.solscanUrl).toBe("https://solscan.io/tx/5xRibbotSignature");
+  });
+
+  it.each([
+    [403, { error: { code: "policy_violation" } }, "policy_violation"],
+    [403, { error: { error_code: "policy_violation" } }, "policy_violation"],
+    [502, { code: "transaction_broadcast_failure" }, "transaction_broadcast_failure"],
+  ])(
+    "preserves a Privy non-broadcast error from HTTP %s without retaining the response body",
+    async (status, body, expectedCode) => {
+      const privateKey = await generateTestAuthorizationPrivateKey();
+      globalThis.fetch = vi.fn(async () => Response.json(body, { status }));
+
+      let caught: unknown;
+      try {
+        await signAndSendManagedSolanaTransaction(
+          {
+            PRIVY_APP_ID: "privy-app",
+            PRIVY_APP_SECRET: "privy-secret",
+            PRIVY_AUTHORIZATION_KEY_ID: "auth-key",
+            PRIVY_AUTHORIZATION_PRIVATE_KEY: privateKey,
+          } as Env,
+          {
+            walletId: "wallet_123",
+            transactionBase64: "BASE64_TX_PLACEHOLDER",
+            referenceId: "frog-buy-reference",
+          },
+        );
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toBeInstanceOf(PrivyWalletRpcError);
+      expect(caught).toMatchObject({
+        status,
+        kind: "http",
+        providerCode: expectedCode,
+      });
+      expect(
+        privyRpcFailureWasNotBroadcast(caught as PrivyWalletRpcError),
+      ).toBe(true);
+      expect(caught).not.toHaveProperty("responseBody");
+    },
+  );
+
+  it("classifies a malformed Privy authorization key before broadcast", async () => {
+    globalThis.fetch = vi.fn();
+
+    await expect(
+      signAndSendManagedSolanaTransaction(
+        {
+          PRIVY_APP_ID: "privy-app",
+          PRIVY_APP_SECRET: "privy-secret",
+          PRIVY_AUTHORIZATION_KEY_ID: "auth-key",
+          PRIVY_AUTHORIZATION_PRIVATE_KEY: "not-a-pkcs8-private-key",
+        } as Env,
+        {
+          walletId: "wallet_123",
+          transactionBase64: "BASE64_TX_PLACEHOLDER",
+          referenceId: "frog-buy-reference",
+        },
+      ),
+    ).rejects.toMatchObject({
+      status: 0,
+      kind: "authorization",
+      providerCode: "invalid_authorization_private_key",
+    });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("keeps a generic Privy 502 response in reconciliation", async () => {
+    const error = new PrivyWalletRpcError(502, "http", null);
+
+    expect(privyRpcFailureWasNotBroadcast(error)).toBe(false);
   });
 
   it("returns a reconciliation reference when the Privy send response is ambiguous", async () => {
@@ -3668,7 +4662,7 @@ describe("trading bot live withdrawal execution", () => {
 
     expect(response.status).toBe(409);
     expect(data.error).toBe(
-      "Live withdrawals require an FTX/FrogX-managed Privy wallet",
+      "Live withdrawals require Spot & NFT Wallet (Privy)",
     );
   });
 
@@ -9360,6 +10354,9 @@ describe("trading bot activity", () => {
         RIBBOT_TRADING_BOT_TOKEN: "ribbot-token",
         TRADING_BOT_ACCOUNTS: fakeTradingBotAccounts((request) => {
           const url = new URL(request.url);
+          if (url.pathname === "/account") {
+            return Response.json({ status: "not_found", account: null });
+          }
           expect(url.pathname).toBe("/events");
           expect(url.searchParams.get("telegramUserId")).toBe("123456");
           expect(url.searchParams.get("limit")).toBe("2");
@@ -9390,6 +10387,269 @@ describe("trading bot activity", () => {
     expect(data.summary.eventTypes.automation_order_triggered).toBe(1);
     expect(data.events[0].metadata.signature).toBe("abc123");
     expect(data.warnings.join(" ")).toContain("non-secret account events");
+  });
+
+  it("returns Imperial profile status and records one PDA funding event", async () => {
+    const authorityWalletAddress =
+      "So11111111111111111111111111111111111111112";
+    const profileAddress = "Vote111111111111111111111111111111111111111";
+    const persistedEvents: Array<{
+      telegramUserId: string;
+      eventId: string;
+      eventType: string;
+      metadata: Record<string, unknown>;
+      createdAt: string;
+    }> = [];
+    const directFetch = vi.fn(async () => {
+      throw new Error("Perps status must come from the Imperial profile service");
+    });
+    globalThis.fetch = directFetch as typeof fetch;
+
+    const accounts = fakeTradingBotAccounts(
+      async (request) => {
+        const url = new URL(request.url);
+        if (url.pathname === "/account") {
+          return Response.json({
+            status: "ready",
+            account: storedAccount({
+              walletSource: "privy",
+              privyUserId: "privy-user",
+              privyWalletId: "privy-wallet",
+              solanaWalletAddress: authorityWalletAddress,
+              activeWalletId: "privy-wallet",
+              wallets: [
+                {
+                  walletId: "privy-wallet",
+                  label: "Spot & NFT Wallet (Privy)",
+                  role: "spot_nft",
+                  walletSource: "privy",
+                  privyUserId: "privy-user",
+                  privyWalletId: "privy-wallet",
+                  solanaWalletAddress: authorityWalletAddress,
+                  createdAt: "2026-07-31T00:00:00.000Z",
+                },
+              ],
+            }),
+          });
+        }
+        if (url.pathname === "/delta-neutral/preview") {
+          expect(request.method).toBe("POST");
+          expect(await request.json()).toEqual({ telegramUserId: "123456" });
+          return Response.json({
+            status: "ready",
+            liveExecutionEnabled: false,
+            preview: {
+              strategy: "delta_neutral",
+              preset: "low",
+              wallet: authorityWalletAddress,
+              profileIndex: 1,
+              profileAddress,
+              profileUsdc: 70.67903,
+              minimumProfileUsdc: 50,
+              profileFunded: true,
+              liveReady: false,
+              liveEntryCapUsd: 60,
+              maxCycles: 1,
+              blockers: ["Live execution is disabled."],
+            },
+          });
+        }
+        if (url.pathname === "/event" && request.method === "POST") {
+          const body = (await request.json()) as {
+            telegramUserId: string;
+            eventId: string;
+            eventType: string;
+            metadata: Record<string, unknown>;
+          };
+          const event = {
+            ...body,
+            createdAt: "2026-07-31T01:00:00.000Z",
+          };
+          if (
+            !persistedEvents.some(
+              (candidate) => candidate.eventId === event.eventId,
+            )
+          ) {
+            persistedEvents.unshift(event);
+          }
+          return Response.json({ status: "ready", event });
+        }
+        if (url.pathname === "/events") {
+          return Response.json({
+            status: "ready",
+            telegramUserId: "123456",
+            events: persistedEvents,
+          });
+        }
+        return Response.json(
+          { error: "unexpected store path" },
+          { status: 500 },
+        );
+      },
+      (request) => {
+        const eventId = new URL(request.url).searchParams.get("eventId");
+        const event = persistedEvents.find(
+          (candidate) => candidate.eventId === eventId,
+        );
+        return event
+          ? Response.json({ status: "ready", event })
+          : Response.json({ status: "not_found" }, { status: 404 });
+      },
+    );
+    const env = {
+      RIBBOT_TRADING_BOT_TOKEN: "ribbot-token",
+      TRADING_BOT_ACCOUNTS: accounts,
+    } as Env;
+    const activityRequest = () =>
+      new Request(
+        "https://frogx.example/api/frogx/trading-bot/activity?telegramUserId=123456",
+        { headers: { Authorization: "Bearer ribbot-token" } },
+      );
+    const statusResponse = await getTradingBotPerpsStatus(
+      new Request(
+        "https://frogx.example/api/frogx/trading-bot/perps/status?telegramUserId=123456",
+        { headers: { Authorization: "Bearer ribbot-token" } },
+      ),
+      env,
+    );
+    const statusData = (await statusResponse.json()) as {
+      status: string;
+      authorityWalletAddress: string;
+      profileAddress: string;
+      profileIndex: number;
+      profileUsdc: number;
+      minimumProfileUsdc: number;
+      funded: boolean;
+      fundingLocation: string;
+    };
+
+    const first = await getTradingBotActivity(activityRequest(), env);
+    const firstData = (await first.json()) as {
+      events: typeof persistedEvents;
+    };
+    const second = await getTradingBotActivity(activityRequest(), env);
+    const secondData = (await second.json()) as {
+      events: typeof persistedEvents;
+    };
+
+    expect(statusResponse.status).toBe(200);
+    expect(statusData).toMatchObject({
+      status: "ready",
+      authorityWalletAddress,
+      profileAddress,
+      profileIndex: 1,
+      profileUsdc: 70.67903,
+      minimumProfileUsdc: 50,
+      funded: true,
+      fundingLocation: "imperial_profile",
+    });
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(firstData.events).toHaveLength(1);
+    expect(secondData.events).toHaveLength(1);
+    expect(firstData.events[0]).toMatchObject({
+      eventId: `imperial-profile-funded:${profileAddress}`,
+      eventType: "imperial_deposit_confirmed",
+      metadata: {
+        authorityWalletAddress,
+        profileAddress,
+        profileIndex: 1,
+        uiAmountString: "70.67903",
+        minimumUiAmountString: "50",
+        fundingLocation: "imperial_profile",
+      },
+    });
+    expect(directFetch).not.toHaveBeenCalled();
+  });
+
+  it("rejects a profile PDA lookup when the Privy identity does not match", async () => {
+    const authorityWalletAddress =
+      "So11111111111111111111111111111111111111112";
+    const accounts = fakeTradingBotAccounts(async (request) => {
+      const url = new URL(request.url);
+      if (url.pathname === "/imperial-profile") {
+        expect(await request.json()).toEqual({
+          telegramUserId: "123456",
+          privyUserId: "did:privy:not-owner",
+          authorityWalletAddress,
+        });
+        return Response.json(
+          { error: "Account identity does not match" },
+          { status: 403 },
+        );
+      }
+      throw new Error(`Unexpected store path: ${url.pathname}`);
+    });
+
+    const result = await getAuthenticatedTradingBotPerpsWalletSnapshot(
+      { TRADING_BOT_ACCOUNTS: accounts } as Env,
+      {
+        telegramUserId: "123456",
+        privyUserId: "did:privy:not-owner",
+        authorityWalletAddress,
+      },
+    );
+
+    expect(result).toEqual({
+      error: "Account identity does not match",
+      status: 403,
+    });
+  });
+
+  it("loads the profile wallet without running a strategy preview", async () => {
+    const authorityWalletAddress =
+      "So11111111111111111111111111111111111111112";
+    const profileAddress = "Vote111111111111111111111111111111111111111";
+    const paths: string[] = [];
+    const accounts = fakeTradingBotAccounts(async (request) => {
+      const url = new URL(request.url);
+      paths.push(url.pathname);
+      if (url.pathname !== "/imperial-profile") {
+        throw new Error(`Unexpected store path: ${url.pathname}`);
+      }
+      return Response.json({
+        status: "ready",
+        snapshot: {
+          telegramUserId: "123456",
+          authorityWalletAddress,
+          profileAddress,
+          profileIndex: 1,
+          profileUsdc: 69.67903,
+          minimumProfileUsdc: 50,
+          funded: true,
+          fundingLocation: "imperial_profile",
+          imperialProfileVerified: true,
+          balanceStatus: "live",
+          balanceUpdatedAt: "2026-08-05T12:00:00.000Z",
+        },
+      });
+    });
+
+    const result = await getAuthenticatedTradingBotPerpsWalletSnapshot(
+      { TRADING_BOT_ACCOUNTS: accounts } as Env,
+      {
+        telegramUserId: "123456",
+        privyUserId: "did:privy:owner",
+        authorityWalletAddress,
+      },
+    );
+
+    expect(result).toEqual({
+      snapshot: {
+        telegramUserId: "123456",
+        authorityWalletAddress,
+        profileAddress,
+        profileIndex: 1,
+        profileUsdc: 69.67903,
+        minimumProfileUsdc: 50,
+        funded: true,
+        fundingLocation: "imperial_profile",
+        imperialProfileVerified: true,
+        balanceStatus: "live",
+        balanceUpdatedAt: "2026-08-05T12:00:00.000Z",
+      },
+    });
+    expect(paths).toEqual(["/imperial-profile"]);
   });
 });
 

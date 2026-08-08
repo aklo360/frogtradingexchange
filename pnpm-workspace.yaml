@@ -1,3 +1,21 @@
 packages:
   - "apps/*"
   - "packages/*"
+allowBuilds:
+  '@reown/appkit@1.8.9': true
+  bigint-buffer@1.1.5: true
+  blake-hash@2.0.0: true
+  bufferutil@4.0.9: true
+  esbuild@0.15.18: true
+  esbuild@0.17.19: true
+  esbuild@0.25.10: true
+  keccak@3.0.4: true
+  msgpackr-extract@3.0.3: true
+  protobufjs@7.4.0: true
+  sharp@0.33.5: true
+  sharp@0.34.4: true
+  tiny-secp256k1@1.1.7: true
+  unrs-resolver@1.11.1: true
+  usb@2.16.0: true
+  utf-8-validate@5.0.10: true
+  workerd@1.20250718.0: true

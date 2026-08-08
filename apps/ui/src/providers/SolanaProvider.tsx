@@ -1,14 +1,24 @@
 "use client";
 
-import { useMemo } from "react";
-import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
-import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
-import { PhantomWalletAdapter, SolflareWalletAdapter } from "@solana/wallet-adapter-wallets";
-
-import "@solana/wallet-adapter-react-ui/styles.css";
+import { Connection } from "@solana/web3.js";
+import { createContext, useContext, useMemo } from "react";
 
 type Props = {
   children: React.ReactNode;
+};
+
+const SolanaConnectionContext = createContext<Connection | null>(null);
+
+export const useSolanaConnection = () => {
+  const connection = useContext(SolanaConnectionContext);
+
+  if (!connection) {
+    throw new Error(
+      "useSolanaConnection must be used within a SolanaProvider",
+    );
+  }
+
+  return connection;
 };
 
 export const SolanaProvider = ({ children }: Props) => {
@@ -17,27 +27,33 @@ export const SolanaProvider = ({ children }: Props) => {
   const publicWs = process.env.NEXT_PUBLIC_SOLANA_WS_URL;
 
   const endpoint =
-    publicHttp ?? (isBrowser ? `${window.location.origin}/rpc` : "https://api.mainnet-beta.solana.com");
+    publicHttp ??
+    (isBrowser
+      ? `${window.location.origin}/rpc`
+      : "https://api.mainnet-beta.solana.com");
 
-  // Derive ws endpoint if provided or from HTTP; helps local dev avoid WS rewrite issues
   const wsEndpoint =
     publicWs ??
     (publicHttp
-      ? publicHttp.replace(/^http(\w*):/i, (_, s) => (s && s.toLowerCase().startsWith("s") ? "wss:" : "ws:"))
+      ? publicHttp.replace(/^http(\w*):/i, (_, suffix) =>
+          suffix && suffix.toLowerCase().startsWith("s") ? "wss:" : "ws:",
+        )
       : isBrowser
         ? `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/rpc`
         : undefined);
 
-  const wallets = useMemo(
-    () => [new PhantomWalletAdapter(), new SolflareWalletAdapter()],
-    [],
+  const connection = useMemo(
+    () =>
+      new Connection(endpoint, {
+        commitment: "processed",
+        wsEndpoint,
+      }),
+    [endpoint, wsEndpoint],
   );
 
   return (
-    <ConnectionProvider endpoint={endpoint} config={{ commitment: "processed", wsEndpoint }}>
-      <WalletProvider wallets={wallets} autoConnect>
-        <WalletModalProvider>{children}</WalletModalProvider>
-      </WalletProvider>
-    </ConnectionProvider>
+    <SolanaConnectionContext.Provider value={connection}>
+      {children}
+    </SolanaConnectionContext.Provider>
   );
 };

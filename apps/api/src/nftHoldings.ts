@@ -187,6 +187,31 @@ export async function fetchWalletNftHoldings(
   };
 }
 
+export async function walletOwnsCollectionAsset(
+  env: Env,
+  input: {
+    walletAddress: string;
+    mint: string;
+    collectionAddress: string;
+  },
+): Promise<boolean> {
+  let page = 1;
+  while (page <= 10_000) {
+    const holdings = await fetchWalletNftHoldings(env, {
+      walletAddress: input.walletAddress,
+      page,
+      limit: MAX_PAGE_SIZE,
+      collectionAddress: input.collectionAddress,
+    });
+    if (holdings.items.some((item) => item.mint === input.mint)) return true;
+    if (page * holdings.limit >= holdings.total || holdings.items.length === 0) {
+      return false;
+    }
+    page += 1;
+  }
+  return false;
+}
+
 export async function fetchWalletsNftHoldings(
   env: Env,
   input: {

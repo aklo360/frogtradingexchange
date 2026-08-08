@@ -14,6 +14,16 @@
   animation: bubble-pop 650ms ease-out;
 }
 
+.heading {
+  margin: 0;
+  text-align: center;
+  font-size: 0.5rem;
+  line-height: 1.4;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(234, 253, 244, 0.82);
+}
+
 .barRow {
   display: flex;
   align-items: center;
@@ -220,6 +230,10 @@
 }
 
 @media (max-width: 768px) {
+  .heading {
+    font-size: 0.44rem;
+  }
+
   .label {
     font-size: 0.42rem;
   }

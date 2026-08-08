@@ -32,7 +32,7 @@ export function middleware() {
   const csp = [
     "default-src 'self'",
     // Allow scripts from self, inline (needed for Next.js), and eval for WASM
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://telegram.org",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://telegram.org https://auth.privy.io",
     // Allow styles from self and inline (needed for CSS-in-JS)
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     // Allow images from self, data URIs, and HTTPS sources (NFT metadata)

@@ -12,12 +12,18 @@ import {
 } from "./airdrop";
 import { runBuyback } from "./buyback";
 import {
+  postMagicEdenBuyExecution,
+  postMagicEdenBuyExecutionStatus,
+  postMagicEdenFrogMarket,
+} from "./magicEdenBuy";
+import {
   getMagicEdenTopOffer,
   postMagicEdenSellExecution,
   postMagicEdenSellExecutionStatus,
   postMagicEdenSellTransaction,
 } from "./magicEdenSell";
 import { getNftHoldings } from "./nftHoldings";
+import { getProfilePerpsWallet } from "./profilePerpsWallet";
 import {
   getRobinhoodAlphaSignals,
   runRobinhoodAlphaScanner,
@@ -27,6 +33,7 @@ import {
   getInfo,
   postBuybackBurn,
   postBuybackExecute,
+  postBuybackRepairFeeAccounts,
   postQuotes,
   postSwap,
 } from "./routes";
@@ -39,13 +46,20 @@ import {
   getTradingBotConfig,
   getTradingBotOrders,
   getTradingBotOperatorReviews,
+  getTradingBotPerpsStatus,
   getTradingBotNfts,
   getTradingBotPnl,
   getTradingBotReferrals,
+  postTradingBotDeltaNeutralPreview,
+  postTradingBotDeltaNeutralStart,
+  postTradingBotDeltaNeutralStatus,
+  postTradingBotDeltaNeutralStop,
   postTradingBotControlCode,
+  postTradingBotControlImperial,
   postTradingBotControlPreference,
   postTradingBotControlSession,
   postTradingBotControlWallet,
+  postTradingBotSetupReset,
   getTradingBotCopyTradeConfigs,
   postTradingBotAutoBuyCancel,
   postTradingBotAutoBuyExecutionStatus,
@@ -279,6 +293,24 @@ export default {
       return postMagicEdenSellExecutionStatus(request, env);
     }
     if (
+      url.pathname === "/api/frogx/trading-bot/frogs/market" &&
+      request.method === "POST"
+    ) {
+      return postMagicEdenFrogMarket(request, env);
+    }
+    if (
+      url.pathname === "/api/frogx/trading-bot/frogs/execute-buy" &&
+      request.method === "POST"
+    ) {
+      return postMagicEdenBuyExecution(request, env);
+    }
+    if (
+      url.pathname === "/api/frogx/trading-bot/frogs/execute-buy/status" &&
+      request.method === "POST"
+    ) {
+      return postMagicEdenBuyExecutionStatus(request, env);
+    }
+    if (
       url.pathname === "/api/frogx/trading-bot/config" &&
       request.method === "GET"
     ) {
@@ -291,10 +323,46 @@ export default {
       return getTradingBotAccount(request, env);
     }
     if (
+      url.pathname === "/api/frogx/account/perps-wallet" &&
+      request.method === "GET"
+    ) {
+      return getProfilePerpsWallet(request, env);
+    }
+    if (
       url.pathname === "/api/frogx/trading-bot/activity" &&
       request.method === "GET"
     ) {
       return getTradingBotActivity(request, env);
+    }
+    if (
+      url.pathname === "/api/frogx/trading-bot/perps/status" &&
+      request.method === "GET"
+    ) {
+      return getTradingBotPerpsStatus(request, env);
+    }
+    if (
+      url.pathname === "/api/frogx/trading-bot/perps/delta-neutral/preview" &&
+      request.method === "POST"
+    ) {
+      return postTradingBotDeltaNeutralPreview(request, env);
+    }
+    if (
+      url.pathname === "/api/frogx/trading-bot/perps/delta-neutral/start" &&
+      request.method === "POST"
+    ) {
+      return postTradingBotDeltaNeutralStart(request, env);
+    }
+    if (
+      url.pathname === "/api/frogx/trading-bot/perps/delta-neutral/status" &&
+      request.method === "POST"
+    ) {
+      return postTradingBotDeltaNeutralStatus(request, env);
+    }
+    if (
+      url.pathname === "/api/frogx/trading-bot/perps/delta-neutral/stop" &&
+      request.method === "POST"
+    ) {
+      return postTradingBotDeltaNeutralStop(request, env);
     }
     if (
       url.pathname === "/api/frogx/trading-bot/robinhood-alpha" &&
@@ -351,10 +419,22 @@ export default {
       return postTradingBotControlCode(request, env);
     }
     if (
+      url.pathname === "/api/frogx/trading-bot/setup/reset" &&
+      request.method === "POST"
+    ) {
+      return postTradingBotSetupReset(request, env);
+    }
+    if (
       url.pathname === "/api/frogx/trading-bot/control/session" &&
       request.method === "POST"
     ) {
       return postTradingBotControlSession(request, env);
+    }
+    if (
+      url.pathname === "/api/frogx/trading-bot/control/imperial" &&
+      request.method === "POST"
+    ) {
+      return postTradingBotControlImperial(request, env);
     }
     if (
       url.pathname === "/api/frogx/trading-bot/control/preferences" &&
@@ -649,6 +729,12 @@ export default {
       request.method === "POST"
     ) {
       return postBuybackBurn(request, env);
+    }
+    if (
+      url.pathname === "/api/frogx/buyback/repair-fee-accounts" &&
+      request.method === "POST"
+    ) {
+      return postBuybackRepairFeeAccounts(request, env);
     }
     if (url.pathname === "/api/frogx/quotes" && request.method === "POST") {
       return postQuotes(request, env);

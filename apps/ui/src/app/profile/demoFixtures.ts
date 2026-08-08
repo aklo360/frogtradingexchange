@@ -13,8 +13,18 @@ export const DEMO_WALLET_ADDRESS =
 const DEMO_LINKED_ADDRESS = "bru5cksNVW9nDYpH1zCLPd1jbAyGXtQ89t54qBqZi7om";
 
 export const demoPrivyWallets: PrivySolanaWallet[] = [
-  { id: "demo-embedded", address: DEMO_WALLET_ADDRESS, embedded: true },
-  { id: "demo-linked", address: DEMO_LINKED_ADDRESS, embedded: false },
+  {
+    id: "demo-embedded",
+    address: DEMO_WALLET_ADDRESS,
+    embedded: true,
+    walletIndex: 0,
+  },
+  {
+    id: "demo-linked",
+    address: DEMO_LINKED_ADDRESS,
+    embedded: false,
+    walletIndex: null,
+  },
 ];
 
 export const demoTelegramAccount = {

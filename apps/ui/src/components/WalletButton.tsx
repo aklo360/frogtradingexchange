@@ -1,10 +1,8 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
-import { usePrivy } from "@privy-io/react-auth";
-import { useWallet } from "@solana/wallet-adapter-react";
 
-import { getPrivySolanaWallets } from "@/lib/privy";
+import { usePublicWallet } from "@/providers/PublicWalletProvider";
 
 type Props = {
   className?: string;
@@ -16,59 +14,37 @@ const formatAddress = (address: string) =>
 export const WalletButton = ({ className }: Props) => {
   const {
     ready,
-    authenticated,
-    user,
-    login,
-    logout,
-  } = usePrivy();
-  const { connected, connecting, disconnecting, publicKey, disconnect } =
-    useWallet();
-  const privyWallet = useMemo(
-    () => getPrivySolanaWallets(user?.linkedAccounts)[0],
-    [user?.linkedAccounts],
-  );
-
-  const label = useMemo(() => {
-    if (!ready) return "Loading account…";
-    if (connecting) return "Connecting…";
-    if (disconnecting) return "Disconnecting…";
-    if (authenticated) {
-      return privyWallet ? formatAddress(privyWallet.address) : "FTX Account";
-    }
-    if (connected && publicKey) {
-      return formatAddress(publicKey.toBase58());
-    }
-    return "Sign in / Create account";
-  }, [
-    authenticated,
-    connected,
+    wallet,
     connecting,
     disconnecting,
-    privyWallet,
-    publicKey,
-    ready,
-  ]);
+    connect,
+    disconnect,
+  } = usePublicWallet();
+
+  const label = useMemo(() => {
+    if (!ready) return "Loading…";
+    if (connecting) return "Connecting…";
+    if (disconnecting) return "Disconnecting…";
+    if (wallet) {
+      return formatAddress(wallet.address);
+    }
+    return "Connect Wallet";
+  }, [connecting, disconnecting, ready, wallet]);
 
   const handleClick = useCallback(() => {
     if (!ready || connecting || disconnecting) return;
-    if (authenticated) {
-      void Promise.all([logout(), connected ? disconnect() : Promise.resolve()]);
-      return;
-    }
-    if (connected) {
+    if (wallet) {
       void disconnect();
       return;
     }
-    login({ loginMethods: ["telegram", "email", "wallet"] });
+    connect();
   }, [
-    authenticated,
-    connected,
+    connect,
     connecting,
     disconnect,
     disconnecting,
-    login,
-    logout,
     ready,
+    wallet,
   ]);
 
   return (

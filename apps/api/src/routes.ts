@@ -10,6 +10,7 @@ import {
   burnBuybackAsset,
   getBuybackStatus,
   isAuthorizedBuybackTrigger,
+  repairBuybackFeeAccounts,
   runBuyback,
 } from "./buyback";
 import {
@@ -177,6 +178,25 @@ export async function postBuybackBurn(
     // SECURITY: Log details server-side, return generic message to client
     console.error("[buyback] Burn failed:", error);
     return json({ error: "Burn operation failed" }, { status: 500 });
+  }
+}
+
+export async function postBuybackRepairFeeAccounts(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  if (!isAuthorizedBuybackTrigger(request, env)) {
+    return json({ error: "Unauthorized" }, { status: 401 });
+  }
+  try {
+    const result = await repairBuybackFeeAccounts(env);
+    return json({ ok: true, ...result });
+  } catch (error) {
+    console.error("[buyback] Fee account repair failed:", error);
+    return json(
+      { error: "Buyback fee account repair failed" },
+      { status: 500 },
+    );
   }
 }
 

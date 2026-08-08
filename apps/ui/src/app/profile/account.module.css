@@ -1,0 +1,450 @@
+.page {
+  align-items: center;
+  justify-content: center;
+  padding-top: 132px;
+  color: #eafdf4;
+}
+
+.panel {
+  position: relative;
+  z-index: 3;
+  width: min(680px, 100%);
+  border: 2px solid rgba(20, 241, 149, 0.72);
+  border-radius: 8px;
+  background: rgba(12, 6, 53, 0.94);
+  box-shadow:
+    0 18px 42px rgba(0, 0, 0, 0.46),
+    0 0 26px rgba(20, 241, 149, 0.18),
+    inset 0 0 18px rgba(153, 69, 255, 0.16);
+  overflow: hidden;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.35rem 1.45rem 1.2rem;
+}
+
+.eyebrow,
+.sectionLabel,
+.walletIdentity > span,
+.connectState > span,
+.accountFooter > span {
+  font-family: var(--font-press-start), var(--font-geist-sans), system-ui,
+    sans-serif;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.eyebrow {
+  display: block;
+  margin-bottom: 0.55rem;
+  color: #94ffef;
+  font-size: 0.48rem;
+}
+
+.panelHeader h1 {
+  margin: 0;
+  color: #eafdf4;
+  font-family: var(--font-press-start), var(--font-geist-sans), system-ui,
+    sans-serif;
+  font-size: 1.05rem;
+  line-height: 1.35;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.connectedStatus {
+  flex: none;
+  border: 1px solid rgba(20, 241, 149, 0.68);
+  border-radius: 999px;
+  padding: 0.4rem 0.58rem;
+  color: #14f195;
+  background: rgba(20, 241, 149, 0.1);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.connectState {
+  min-height: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  border-top: 1px solid rgba(153, 69, 255, 0.38);
+  padding: 2rem 1.45rem;
+}
+
+.connectState img {
+  width: 76px;
+  height: 76px;
+  image-rendering: pixelated;
+}
+
+.connectState > span {
+  color: rgba(234, 253, 244, 0.62);
+  font-size: 0.46rem;
+}
+
+.identitySection {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.5fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  border-top: 1px solid rgba(153, 69, 255, 0.38);
+  padding: 1rem 1.45rem;
+}
+
+.sectionLabel {
+  color: #94ffef;
+  font-size: 0.48rem;
+}
+
+.identitySection strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.95rem;
+}
+
+.identityMeta {
+  color: rgba(234, 253, 244, 0.62);
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+}
+
+.walletSection {
+  border-top: 1px solid rgba(153, 69, 255, 0.38);
+}
+
+.sectionHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.45rem 0.8rem;
+}
+
+.sectionHeading > div {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.sectionHeading h2 {
+  margin: 0;
+  font-family: var(--font-press-start), var(--font-geist-sans), system-ui,
+    sans-serif;
+  font-size: 0.68rem;
+  line-height: 1.4;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.sectionHeading > div > span {
+  color: #14f195;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.78rem;
+}
+
+.walletList {
+  padding: 0 1.45rem;
+}
+
+.walletRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  border-top: 1px solid rgba(234, 253, 244, 0.12);
+  padding: 0.9rem 0;
+}
+
+.walletIdentity {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.walletIdentity > span {
+  color: rgba(234, 253, 244, 0.58);
+  font-size: 0.44rem;
+}
+
+.walletIdentity strong {
+  overflow-wrap: anywhere;
+  color: #eafdf4;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.79rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.walletStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.85rem;
+  color: rgba(234, 253, 244, 0.68);
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.7rem;
+}
+
+.walletActions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.primaryButton,
+.secondaryButton,
+.signOutButton,
+.swapButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-family: var(--font-press-start), var(--font-geist-sans), system-ui,
+    sans-serif;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+.primaryButton {
+  min-height: 42px;
+  border: 2px solid #14f195;
+  padding: 0.7rem 1rem;
+  color: #050d0a;
+  background: linear-gradient(135deg, #14f195 0%, #94ffef 52%, #9945ff 100%);
+  font-size: 0.54rem;
+  font-weight: 700;
+}
+
+.secondaryButton,
+.signOutButton {
+  min-height: 34px;
+  border: 1px solid rgba(153, 69, 255, 0.72);
+  padding: 0.5rem 0.62rem;
+  color: #eafdf4;
+  background: rgba(8, 2, 30, 0.78);
+  font-size: 0.46rem;
+}
+
+.signOutButton {
+  border-color: rgba(255, 122, 156, 0.62);
+}
+
+.primaryButton:hover:not(:disabled),
+.secondaryButton:hover:not(:disabled),
+.signOutButton:hover:not(:disabled),
+.swapButton:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled,
+.signOutButton:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.emptyWallet {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.8rem 1.45rem 1.2rem;
+}
+
+.emptyWallet > span {
+  color: rgba(234, 253, 244, 0.7);
+}
+
+.portfolioSection {
+  border-top: 1px solid rgba(153, 69, 255, 0.38);
+  padding: 1rem 1.45rem 1.25rem;
+}
+
+.portfolioHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.portfolioHeading h2 {
+  margin: 0.5rem 0 0;
+  font-family: var(--font-press-start), var(--font-geist-sans), system-ui,
+    sans-serif;
+  font-size: 0.68rem;
+  line-height: 1.4;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.portfolioHeading > strong {
+  color: #14f195;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 1.15rem;
+}
+
+.holderStatus {
+  margin: 0.8rem 0 0;
+  color: #14f195;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.portfolioEmpty {
+  margin: 0.8rem 0 0;
+  color: rgba(234, 253, 244, 0.68);
+  font-size: 0.82rem;
+}
+
+.frogGrid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+}
+
+.frogItem {
+  min-width: 0;
+}
+
+.frogItem img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  border: 1px solid rgba(20, 241, 149, 0.36);
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.frogItem span {
+  display: block;
+  margin-top: 0.3rem;
+  overflow: hidden;
+  color: rgba(234, 253, 244, 0.7);
+  font-size: 0.62rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.accountFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-top: 1px solid rgba(153, 69, 255, 0.38);
+  padding: 1rem 1.45rem 1.2rem;
+}
+
+.accountFooter > span {
+  color: rgba(234, 253, 244, 0.58);
+  font-size: 0.43rem;
+  line-height: 1.65;
+}
+
+.error {
+  margin: 0;
+  border-top: 1px solid rgba(255, 122, 156, 0.4);
+  padding: 0.85rem 1.45rem 1rem;
+  color: #ff9bb3;
+  font-size: 0.84rem;
+}
+
+.swapButton {
+  width: 40px;
+  height: 40px;
+  border: 2px solid #14f195;
+  color: #14f195;
+  background: rgba(8, 2, 30, 0.78);
+}
+
+.swapButton img {
+  width: 20px;
+  height: 20px;
+  image-rendering: pixelated;
+  filter: invert(84%) sepia(61%) saturate(1582%) hue-rotate(88deg)
+    brightness(100%) contrast(91%);
+}
+
+@media (max-width: 640px) {
+  .page {
+    justify-content: flex-start;
+    padding-top: 106px;
+  }
+
+  .panelHeader,
+  .identitySection,
+  .sectionHeading,
+  .walletList,
+  .emptyWallet,
+  .accountFooter {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .identitySection {
+    grid-template-columns: 1fr;
+    gap: 0.42rem;
+  }
+
+  .walletRow {
+    grid-template-columns: 1fr;
+  }
+
+  .walletActions {
+    width: 100%;
+  }
+
+  .sectionHeading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sectionHeading > .secondaryButton {
+    width: 100%;
+  }
+
+  .secondaryButton {
+    flex: 1;
+  }
+
+  .portfolioSection {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .frogGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .emptyWallet,
+  .accountFooter {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .signOutButton {
+    width: 100%;
+  }
+
+  .swapButton {
+    width: 28px;
+    height: 28px;
+  }
+
+  .swapButton img {
+    width: 15px;
+    height: 15px;
+  }
+}

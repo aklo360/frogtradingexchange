@@ -8,7 +8,7 @@ type Props = {
 };
 
 const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
-const solanaConnectors = toSolanaWalletConnectors({ shouldAutoConnect: true });
+const solanaConnectors = toSolanaWalletConnectors({ shouldAutoConnect: false });
 
 export const PrivyProvider = ({ children }: Props) => {
   if (!appId) {
@@ -19,12 +19,13 @@ export const PrivyProvider = ({ children }: Props) => {
     <ReactPrivyProvider
       appId={appId}
       config={{
-        loginMethods: ["telegram", "email", "wallet"],
+        loginMethods: ["telegram", "google", "apple", "wallet"],
         appearance: {
           theme: "dark",
           accentColor: "#18e299",
           walletChainType: "solana-only",
           showWalletLoginFirst: false,
+          walletList: ["phantom", "metamask"],
         },
         embeddedWallets: {
           solana: { createOnLogin: "off" },

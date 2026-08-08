@@ -16,6 +16,8 @@ import {
 import { postQuotes, postSwap } from "./routes";
 
 const DEFAULT_PRIVY_API_BASE_URL = "https://api.privy.io/v1";
+const DEFAULT_IMPERIAL_API_BASE_URL = "https://api.imperial.space";
+const IMPERIAL_REFERRER_USERNAME = "sbf";
 const DEFAULT_JUPITER_PRICE_API_URL = "https://api.jup.ag/price/v3";
 const DEFAULT_JUPITER_TOKENS_API_URL = "https://api.jup.ag/tokens/v2/recent";
 const SOLANA_MAINNET_CAIP2 = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
@@ -23,6 +25,18 @@ const SOLANA_ADDRESS_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const TELEGRAM_USER_ID_PATTERN = /^\d{1,32}$/;
 const WRAPPED_SOL_MINT = "So11111111111111111111111111111111111111112";
 const TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+// Ribbot exposes one fixed Delta Neutral / Routed Arb beta contract.
+const DELTA_NEUTRAL_STRATEGY = "delta_neutral";
+const DELTA_NEUTRAL_PRESET = "low";
+const DELTA_NEUTRAL_PROFILE_INDEX = 1;
+const DELTA_NEUTRAL_MINIMUM_PROFILE_USDC = 50;
+const IMPERIAL_PROFILE_REQUEST_TIMEOUT_MS = 5_000;
+const DELTA_NEUTRAL_DAILY_BUDGET_USD = 5;
+const DELTA_NEUTRAL_LIVE_ENTRY_CAP_USD = 60;
+const DELTA_NEUTRAL_MAX_CYCLES = 1;
+const DELTA_NEUTRAL_WAIT_SECONDS = 5;
+const DELTA_NEUTRAL_RETRY_UNTIL_CLEAN_SECONDS = 600;
+const DELTA_NEUTRAL_IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9:_-]{8,128}$/;
 const PUMP_FUN_BONDING_CURVE_PROGRAM_ID =
   "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P";
 const MAX_TRADING_BOT_TOKEN_LIST = 250;
@@ -61,6 +75,8 @@ const TOKEN_CLEANUP_MAX_CANDIDATES = 50;
 const REFERRAL_CODE_PATTERN = /^[A-Z2-9]{6,16}$/;
 const REFERRAL_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const REFERRAL_CODE_LENGTH = 8;
+const SPOT_NFT_WALLET_LABEL = "Spot & NFT Wallet (Privy)";
+const PORTFOLIO_WALLET_LABEL = "Portfolio Wallet (Read only)";
 
 const json = (data: unknown, init?: ResponseInit) => Response.json(data, init);
 
@@ -69,6 +85,8 @@ type PrivyLinkedAccount = {
   id?: string;
   address?: string;
   chain_type?: string;
+  wallet_index?: number | null;
+  walletIndex?: number | null;
   wallet_client_type?: string;
   walletClientType?: string;
   walletClient?: string;
@@ -83,6 +101,10 @@ type PrivyWallet = {
   id: string;
   address: string;
   chain_type: string;
+  additional_signers?: Array<{
+    signer_id: string;
+    override_policy_ids?: string[];
+  }>;
 };
 
 type TradingBotWalletBody = {
@@ -109,6 +131,12 @@ type TradingBotExecutionBody = TradingBotSwapBody & {
 };
 
 type TradingBotExecutionStatusBody = TradingBotExecutionBody;
+
+type TradingBotDeltaNeutralBody = {
+  telegramUserId?: unknown;
+  idempotencyKey?: unknown;
+  confirmLive?: unknown;
+};
 
 type TradingBotPositionsBody = {
   telegramUserId?: unknown;
@@ -354,16 +382,33 @@ type TradingBotControlCodeBody = {
   username?: unknown;
 };
 
+type TradingBotSetupResetBody = {
+  telegramUserId?: unknown;
+};
+
 type TradingBotControlSessionBody = {
   telegramUserId?: unknown;
   code?: unknown;
+};
+
+type TradingBotControlImperialBody = {
+  telegramUserId?: unknown;
+  sessionToken?: unknown;
+  wallet?: unknown;
+  message?: unknown;
+  signature?: unknown;
 };
 
 type TradingBotControlPreferenceBody = TradingBotPreferenceValidationBody & {
   sessionToken?: unknown;
 };
 
-type TradingBotControlWalletAction = "claim" | "export" | "revoke" | "restore";
+type TradingBotControlWalletAction =
+  | "claim"
+  | "export"
+  | "revoke"
+  | "restore"
+  | "verify_signer";
 
 type TradingBotControlWalletBody = {
   telegramUserId?: unknown;
@@ -752,15 +797,26 @@ type TradingBotAccountSnapshot = {
   updatedAt: string;
 };
 
+type TradingBotSetupStatus = {
+  walletReady: boolean;
+  automationSignerReady: boolean;
+  imperialConnected: boolean;
+  botAccessEnabled: boolean;
+  complete: boolean;
+};
+
 type TradingBotAccountWalletSlot = {
   walletId: string;
   label: string;
+  role: TradingBotWalletRole;
   walletSource: "privy" | "external";
   privyUserId?: string;
   privyWalletId?: string;
   solanaWalletAddress: string;
   createdAt: string;
 };
+
+type TradingBotWalletRole = "spot_nft" | "portfolio";
 
 type TradingBotAccountRow = {
   telegram_user_id: string;
@@ -812,6 +868,242 @@ type TradingBotControlSessionRow = {
   created_at: string;
   last_used_at: string;
 };
+
+type TradingBotImperialSessionRow = {
+  telegram_user_id: string;
+  wallet_address: string;
+  jwt: string;
+  expires_at: number;
+  connected_at: string;
+  updated_at: string;
+  referrer_username: string | null;
+  profile_address: string | null;
+  profile_usdc_native: number | null;
+  profile_synced_at: string | null;
+};
+
+type TradingBotImperialConnection = {
+  status: "connected";
+  authorityWalletAddress: string;
+  profileAddress: string | null;
+  profileIndex: typeof DELTA_NEUTRAL_PROFILE_INDEX;
+  expiresAt: number;
+  connectedAt: string;
+  referrerUsername: typeof IMPERIAL_REFERRER_USERNAME;
+};
+
+type TradingBotDeltaNeutralRunRow = {
+  telegram_user_id: string;
+  run_id: string;
+  idempotency_key: string;
+  wallet_address: string;
+  status: string;
+  service_status_json: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type DeltaNeutralServiceRunStatus = {
+  strategy: typeof DELTA_NEUTRAL_STRATEGY;
+  preset: typeof DELTA_NEUTRAL_PRESET;
+  wallet: string;
+  runId: string | null;
+  launching: boolean;
+  running: boolean;
+  stopRequested: boolean;
+  completedCycles: number;
+  maxCycles: number;
+  dailyBudgetUsd: number;
+  estimatedRunCostUsd: number;
+  completedVolumeUsd: number;
+  startedAtUnix: number | null;
+  stoppedAtUnix: number | null;
+  lastMessage: string | null;
+  failed: boolean;
+};
+
+type DeltaNeutralServicePreview = {
+  strategy: typeof DELTA_NEUTRAL_STRATEGY;
+  preset: typeof DELTA_NEUTRAL_PRESET;
+  wallet: string;
+  profileIndex: number;
+  profileAddress: string | null;
+  profileUsdc: number;
+  minimumProfileUsdc: number;
+  profileFunded: boolean;
+  liveReady: boolean;
+  liveEntryCapUsd: number;
+  serviceLiveEntryCapUsd: number;
+  entryCapCompatible: boolean;
+  maxCycles: number;
+  blockers: string[];
+};
+
+export type TradingBotPerpsWalletSnapshot = {
+  telegramUserId: string;
+  authorityWalletAddress: string;
+  profileAddress: string | null;
+  profileIndex: number;
+  profileUsdc: number;
+  minimumProfileUsdc: number;
+  funded: boolean;
+  fundingLocation: "imperial_profile";
+  imperialProfileVerified: boolean;
+  strategyReady: boolean;
+  liveExecutionEnabled: boolean;
+  blockers: string[];
+};
+
+export type TradingBotProfilePerpsWalletSnapshot = Pick<
+  TradingBotPerpsWalletSnapshot,
+  | "telegramUserId"
+  | "authorityWalletAddress"
+  | "profileAddress"
+  | "profileIndex"
+  | "profileUsdc"
+  | "minimumProfileUsdc"
+  | "funded"
+  | "fundingLocation"
+  | "imperialProfileVerified"
+> & {
+  balanceStatus: "live" | "cached";
+  balanceUpdatedAt: string;
+};
+
+type TradingBotPerpsWalletResolution =
+  | { snapshot: TradingBotPerpsWalletSnapshot }
+  | { error: string; status: number };
+
+type TradingBotProfilePerpsWalletResolution =
+  | { snapshot: TradingBotProfilePerpsWalletSnapshot }
+  | { error: string; status: number };
+
+type ImperialReferralAttributionResult =
+  | { referrerUsername: typeof IMPERIAL_REFERRER_USERNAME }
+  | { error: string; status: number };
+
+type ImperialReferralLookupResult =
+  | { referrerUsername: string | null }
+  | { error: string; status: number };
+
+async function getImperialReferrerUsername(
+  wallet: string,
+  fetcher: typeof fetch,
+): Promise<ImperialReferralLookupResult> {
+  try {
+    const response = await fetcher(
+      `${DEFAULT_IMPERIAL_API_BASE_URL}/api/v1/profile/${encodeURIComponent(wallet)}/stats?period=ALL`,
+      { headers: { Accept: "application/json" } },
+    );
+    const data = (await response.json().catch(() => null)) as unknown;
+    if (
+      !response.ok ||
+      !data ||
+      typeof data !== "object" ||
+      Array.isArray(data)
+    ) {
+      return {
+        error: "Imperial referral verification is temporarily unavailable",
+        status: 502,
+      };
+    }
+
+    const referredBy = (data as Record<string, unknown>).referredBy;
+    if (referredBy === null || referredBy === undefined) {
+      return { referrerUsername: null };
+    }
+
+    const referrerUsername =
+      stringValue(referredBy) ??
+      (typeof referredBy === "object" && !Array.isArray(referredBy)
+        ? stringValue(
+            (referredBy as Record<string, unknown>).username,
+          )
+        : undefined);
+    if (!referrerUsername) {
+      return {
+        error: "Imperial returned invalid referral information",
+        status: 502,
+      };
+    }
+    return { referrerUsername };
+  } catch {
+    return {
+      error: "Imperial referral verification is temporarily unavailable",
+      status: 502,
+    };
+  }
+}
+
+function verifyImperialSbfReferrer(
+  lookup: ImperialReferralLookupResult,
+): ImperialReferralAttributionResult | null {
+  if ("error" in lookup) return lookup;
+  if (!lookup.referrerUsername) return null;
+  if (
+    lookup.referrerUsername.toLowerCase() ===
+    IMPERIAL_REFERRER_USERNAME
+  ) {
+    return { referrerUsername: IMPERIAL_REFERRER_USERNAME };
+  }
+  return {
+    error: "This Imperial account already uses a different referral",
+    status: 409,
+  };
+}
+
+export async function ensureImperialSbfReferral(
+  wallet: string,
+  fetcher: typeof fetch = fetch,
+): Promise<ImperialReferralAttributionResult> {
+  const currentLookup = await getImperialReferrerUsername(wallet, fetcher);
+  const currentAttribution = verifyImperialSbfReferrer(currentLookup);
+  if (currentAttribution) return currentAttribution;
+
+  let referralResponse: Response;
+  try {
+    referralResponse = await fetcher(
+      `${DEFAULT_IMPERIAL_API_BASE_URL}/api/v1/passthrough/referrals`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          refereeWallet: wallet,
+          referrerUsername: IMPERIAL_REFERRER_USERNAME,
+        }),
+      },
+    );
+  } catch {
+    return {
+      error: "Imperial referral setup is temporarily unavailable",
+      status: 502,
+    };
+  }
+
+  const verifiedLookup = await getImperialReferrerUsername(wallet, fetcher);
+  const verifiedAttribution = verifyImperialSbfReferrer(verifiedLookup);
+  if (verifiedAttribution) return verifiedAttribution;
+
+  if (!referralResponse.ok) {
+    const data = (await referralResponse.json().catch(() => null)) as unknown;
+    const detail =
+      data && typeof data === "object" && !Array.isArray(data)
+        ? stringValue((data as Record<string, unknown>).error) ??
+          stringValue((data as Record<string, unknown>).message)
+        : undefined;
+    return {
+      error: detail
+        ? `Imperial rejected the SBF referral: ${detail.slice(0, 200)}`
+        : "Imperial rejected the SBF referral",
+      status: 502,
+    };
+  }
+
+  return {
+    error: "Imperial did not confirm the SBF referral",
+    status: 502,
+  };
+}
 
 type TradingBotAccountEventRow = {
   telegram_user_id: string;
@@ -1216,13 +1508,45 @@ export class PrivyWalletRpcError extends Error {
   constructor(
     readonly status: number,
     readonly kind: "authorization" | "transport" | "http" = "http",
+    readonly providerCode: string | null = null,
   ) {
     super(
       kind === "http"
-        ? `Privy wallet RPC failed with status ${status}`
+        ? `Privy wallet RPC failed with status ${status}${providerCode ? ` (${providerCode})` : ""}`
         : `Privy wallet RPC failed during ${kind}`,
     );
   }
+}
+
+const PRIVY_DEFINITE_NON_BROADCAST_CODES = new Set([
+  "policy_violation",
+  "insufficient_funds",
+  "transaction_broadcast_failure",
+  "missing_or_empty_authorization_header",
+  "zero_correct_authorization_signatures",
+  "insufficient_correct_authorization_signatures",
+  "incorrect_quantity_of_authorization_signatures",
+  "request_expired",
+  "no_valid_user_session_keys",
+  "user_session_keys_expired",
+]);
+
+export function privyRpcFailureWasNotBroadcast(
+  error: PrivyWalletRpcError,
+): boolean {
+  if (
+    error.providerCode &&
+    PRIVY_DEFINITE_NON_BROADCAST_CODES.has(error.providerCode)
+  ) {
+    return true;
+  }
+  return (
+    error.kind === "authorization" ||
+    (error.kind === "http" &&
+      error.status >= 400 &&
+      error.status < 500 &&
+      ![408, 409, 425, 429].includes(error.status))
+  );
 }
 
 type PrivyTransactionStatus =
@@ -1379,6 +1703,10 @@ export async function getTradingBotConfig(env: Env): Promise<Response> {
   const manualReviewAfterSeconds = tradingBotManualReviewAfterSeconds(env);
   const advancedMonitorEnabled = isTradingBotAdvancedMonitorEnabled(env);
   const positionsConfigured = Boolean(resolveRpcUrl(env));
+  const deltaNeutralConfigured =
+    deltaNeutralServiceMissingRequirements(env, false).length === 0;
+  const deltaNeutralLiveReady =
+    deltaNeutralConfigured && isDeltaNeutralLiveExecutionEnabled(env);
   const liveSigningReady = Boolean(
     liveExecutionEnabled &&
       privyConfig &&
@@ -1405,9 +1733,20 @@ export async function getTradingBotConfig(env: Env): Promise<Response> {
       marketRiskEndpoint: "/api/frogx/trading-bot/market-risk",
       accountEndpoint: "/api/frogx/trading-bot/account",
       activityEndpoint: "/api/frogx/trading-bot/activity",
+      perpsStatusEndpoint: "/api/frogx/trading-bot/perps/status",
+      deltaNeutralPreviewEndpoint:
+        "/api/frogx/trading-bot/perps/delta-neutral/preview",
+      deltaNeutralStartEndpoint:
+        "/api/frogx/trading-bot/perps/delta-neutral/start",
+      deltaNeutralStatusEndpoint:
+        "/api/frogx/trading-bot/perps/delta-neutral/status",
+      deltaNeutralStopEndpoint:
+        "/api/frogx/trading-bot/perps/delta-neutral/stop",
       robinhoodAlphaEndpoint: "/api/frogx/trading-bot/robinhood-alpha",
       controlCodeEndpoint: "/api/frogx/trading-bot/control/code",
+      setupResetEndpoint: "/api/frogx/trading-bot/setup/reset",
       controlSessionEndpoint: "/api/frogx/trading-bot/control/session",
+      controlImperialEndpoint: "/api/frogx/trading-bot/control/imperial",
       controlPreferencesEndpoint: "/api/frogx/trading-bot/control/preferences",
       controlWalletEndpoint: "/api/frogx/trading-bot/control/wallet",
       controlUrl: env.RIBBOT_CONTROL_URL?.trim() || null,
@@ -1606,6 +1945,20 @@ export async function getTradingBotConfig(env: Env): Promise<Response> {
         referrals: true,
         serverReferralStorage: Boolean(env.TRADING_BOT_ACCOUNTS),
         rewardTracking: Boolean(env.TRADING_BOT_ACCOUNTS),
+        deltaNeutral: deltaNeutralConfigured,
+        liveDeltaNeutral: Boolean(
+          deltaNeutralLiveReady && env.TRADING_BOT_ACCOUNTS && botAuthConfigured,
+        ),
+      },
+      perps: {
+        defaultStrategy: DELTA_NEUTRAL_STRATEGY,
+        defaultPreset: DELTA_NEUTRAL_PRESET,
+        profileIndex: DELTA_NEUTRAL_PROFILE_INDEX,
+        minimumProfileUsdc: 50,
+        liveEntryCapUsd: DELTA_NEUTRAL_LIVE_ENTRY_CAP_USD,
+        dailyBudgetUsd: DELTA_NEUTRAL_DAILY_BUDGET_USD,
+        maxCycles: DELTA_NEUTRAL_MAX_CYCLES,
+        explicitConfirmationRequired: true,
       },
       botAuth: {
         required: Boolean(privyConfig),
@@ -1950,10 +2303,13 @@ async function reconcileTradingBotScheduledOrders(
       env,
       order.telegramUserId,
     );
+    const spotWallet =
+      "error" in accountResult || !accountResult.account
+        ? null
+        : spotNftPrivyWallet(accountResult.account);
     if (
       "error" in accountResult ||
-      !accountResult.account?.privyWalletId ||
-      accountResult.account.walletSource !== "privy"
+      !spotWallet?.privyWalletId
     ) {
       const scheduler = {
         ...order.scheduler,
@@ -2027,9 +2383,8 @@ async function reconcileTradingBotScheduledOrders(
       continue;
     }
 
-    const account = accountResult.account;
     if (
-      transaction.wallet_id !== account.privyWalletId ||
+      transaction.wallet_id !== spotWallet.privyWalletId ||
       transaction.caip2 !== SOLANA_MAINNET_CAIP2
     ) {
       const scheduler = clearTradingBotManualReview({
@@ -2572,12 +2927,14 @@ async function reconcileTradingBotAdvancedAutomationConfigs(
       env,
       config.telegramUserId,
     );
+    const spotWallet =
+      "error" in accountResult || !accountResult.account
+        ? null
+        : spotNftPrivyWallet(accountResult.account);
     if (
       "error" in accountResult ||
-      !accountResult.account ||
-      accountResult.account.walletSource !== "privy" ||
-      !accountResult.account.privyWalletId ||
-      accountResult.account.solanaWalletAddress !== config.walletAddress
+      !spotWallet?.privyWalletId ||
+      spotWallet.solanaWalletAddress !== config.walletAddress
     ) {
       await persistTradingBotAdvancedAutomationUnresolved(
         store,
@@ -2648,9 +3005,8 @@ async function reconcileTradingBotAdvancedAutomationConfigs(
       continue;
     }
 
-    const account = accountResult.account;
     if (
-      transaction.wallet_id !== account.privyWalletId ||
+      transaction.wallet_id !== spotWallet.privyWalletId ||
       transaction.caip2 !== SOLANA_MAINNET_CAIP2
     ) {
       await persistTradingBotAdvancedAutomationUnresolved(
@@ -2896,11 +3252,58 @@ export async function getTradingBotAccount(
     );
   }
 
-  return store.fetch(
+  const response = await store.fetch(
     new Request(
       `https://trading-bot-account.local/account?telegramUserId=${telegramUserId}`,
     ),
   );
+  if (!response.ok) return response;
+
+  const data = (await response.json()) as {
+    status?: string;
+    account?: TradingBotAccountSnapshot;
+    setup?: { imperialConnected?: boolean };
+  };
+  if (data.status !== "ready" || !data.account) {
+    return json(data, { status: response.status });
+  }
+
+  const spotWallet = spotNftPrivyWallet(data.account);
+  const walletReady = Boolean(spotWallet?.privyWalletId);
+  const botAccessEnabled = !data.account.botAccessRevokedAt;
+  const imperialConnected = data.setup?.imperialConnected === true;
+  let automationSignerReady = false;
+  const config = resolvePrivyConfig(env);
+
+  if (config && spotWallet?.privyWalletId) {
+    try {
+      const privyWallet = await getPrivyWallet(
+        config,
+        spotWallet.privyWalletId,
+      );
+      automationSignerReady =
+        privyWallet.id === spotWallet.privyWalletId &&
+        privyWallet.address === spotWallet.solanaWalletAddress &&
+        privyWallet.chain_type === "solana" &&
+        hasConfiguredAutomationSigner(privyWallet, config);
+    } catch {
+      automationSignerReady = false;
+    }
+  }
+
+  const setup: TradingBotSetupStatus = {
+    walletReady,
+    automationSignerReady,
+    imperialConnected,
+    botAccessEnabled,
+    complete:
+      walletReady &&
+      automationSignerReady &&
+      imperialConnected &&
+      botAccessEnabled,
+  };
+
+  return json({ ...data, setup }, { status: response.status });
 }
 
 export async function getTradingBotNfts(
@@ -2942,16 +3345,15 @@ export async function getTradingBotNfts(
   const walletAddresses = [
     ...new Set([
       ...(account?.wallets ?? [])
-        .filter((wallet) => wallet.walletSource === "privy")
         .map((wallet) => wallet.solanaWalletAddress),
-      ...(account?.walletSource !== "external" && account?.solanaWalletAddress
+      ...(account?.solanaWalletAddress
         ? [account.solanaWalletAddress]
         : []),
     ]),
   ];
   if (!walletAddresses.length) {
     return json(
-      { status: "wallet_required", error: "No embedded FTX wallet is linked" },
+      { status: "wallet_required", error: "No wallet is linked" },
       { status: 404 },
     );
   }
@@ -3129,6 +3531,11 @@ export async function getTradingBotActivity(
     100,
     25,
   );
+  try {
+    await reconcileTradingBotPerpsDeposit(env, telegramUserId);
+  } catch (error) {
+    console.warn("[trading-bot] Perps deposit reconciliation failed", error);
+  }
   const events = await getStoredTradingBotEvents(env, telegramUserId, limit);
 
   return json(
@@ -3149,6 +3556,277 @@ export async function getTradingBotActivity(
       },
     },
   );
+}
+
+async function resolveTradingBotPerpsWallet(
+  env: Env,
+  telegramUserId: string,
+  identity?: {
+    privyUserId: string;
+    authorityWalletAddress: string;
+  },
+): Promise<TradingBotPerpsWalletResolution> {
+  if (!env.TRADING_BOT_ACCOUNTS) {
+    return {
+      error: "Trading account storage is not configured",
+      status: 503,
+    };
+  }
+
+  const accountResult = await getStoredTradingBotAccount(env, telegramUserId);
+  if ("error" in accountResult) {
+    return {
+      error: accountResult.error,
+      status: accountResult.status ?? 503,
+    };
+  }
+  if (!accountResult.account) {
+    return { error: "Account not found", status: 404 };
+  }
+
+  const wallet = tradingBotAccountWalletByRole(
+    accountResult.account,
+    "spot_nft",
+  );
+  if (!wallet) {
+    return { error: "Spot & NFT wallet is not configured", status: 409 };
+  }
+  if (
+    identity &&
+    (accountResult.account.privyUserId !== identity.privyUserId ||
+      wallet.walletSource !== "privy" ||
+      wallet.solanaWalletAddress !== identity.authorityWalletAddress)
+  ) {
+    return { error: "Account identity does not match", status: 403 };
+  }
+
+  const previewResult = await getStoredTradingBotDeltaNeutralPreview(
+    env,
+    telegramUserId,
+    wallet.solanaWalletAddress,
+  );
+  if ("error" in previewResult) return previewResult;
+
+  const { preview, liveExecutionEnabled } = previewResult;
+  return {
+    snapshot: {
+      telegramUserId,
+      authorityWalletAddress: wallet.solanaWalletAddress,
+      profileAddress: preview.profileAddress,
+      profileIndex: preview.profileIndex,
+      profileUsdc: preview.profileUsdc,
+      minimumProfileUsdc: preview.minimumProfileUsdc,
+      funded: preview.profileFunded,
+      fundingLocation: "imperial_profile",
+      imperialProfileVerified: Boolean(preview.profileAddress),
+      strategyReady: preview.liveReady,
+      liveExecutionEnabled,
+      blockers: preview.blockers,
+    },
+  };
+}
+
+export async function getAuthenticatedTradingBotPerpsWalletSnapshot(
+  env: Env,
+  identity: {
+    telegramUserId: string;
+    privyUserId: string;
+    authorityWalletAddress: string;
+  },
+): Promise<TradingBotProfilePerpsWalletResolution> {
+  const store = tradingBotAccountStore(env, identity.telegramUserId);
+  if (!store) {
+    return {
+      error: "Trading account storage is not configured",
+      status: 503,
+    };
+  }
+
+  const response = await store.fetch(
+    new Request("https://trading-bot-account.local/imperial-profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(identity),
+    }),
+  );
+  const data = (await response.json().catch(() => null)) as unknown;
+  const record = recordValue(data);
+  if (!response.ok) {
+    return {
+      error:
+        stringValue(record?.error) ?? "Imperial profile is temporarily unavailable",
+      status: response.status,
+    };
+  }
+
+  const snapshotRecord = recordValue(record?.snapshot);
+  const profileAddress = stringValue(snapshotRecord?.profileAddress);
+  const authorityWalletAddress = stringValue(
+    snapshotRecord?.authorityWalletAddress,
+  );
+  const profileUsdc = numberValue(snapshotRecord?.profileUsdc);
+  const minimumProfileUsdc = numberValue(
+    snapshotRecord?.minimumProfileUsdc,
+  );
+  const balanceUpdatedAt = stringValue(snapshotRecord?.balanceUpdatedAt);
+  if (
+    !profileAddress ||
+    !SOLANA_ADDRESS_PATTERN.test(profileAddress) ||
+    authorityWalletAddress !== identity.authorityWalletAddress ||
+    !Number.isFinite(profileUsdc) ||
+    Number(profileUsdc) < 0 ||
+    !Number.isFinite(minimumProfileUsdc) ||
+    Number(minimumProfileUsdc) < 0 ||
+    !balanceUpdatedAt ||
+    !Number.isFinite(Date.parse(balanceUpdatedAt))
+  ) {
+    return { error: "Imperial returned an invalid profile", status: 502 };
+  }
+
+  return {
+    snapshot: {
+      telegramUserId: identity.telegramUserId,
+      authorityWalletAddress,
+      profileAddress,
+      profileIndex: DELTA_NEUTRAL_PROFILE_INDEX,
+      profileUsdc: Number(profileUsdc),
+      minimumProfileUsdc: Number(minimumProfileUsdc),
+      funded: snapshotRecord?.funded === true,
+      fundingLocation: "imperial_profile",
+      imperialProfileVerified: true,
+      balanceStatus:
+        snapshotRecord?.balanceStatus === "cached" ? "cached" : "live",
+      balanceUpdatedAt,
+    },
+  };
+}
+
+export async function getTradingBotPerpsStatus(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  const auth = authorizeTradingBotRequest(request, env);
+  if (auth === "missing") {
+    return json(
+      {
+        status: "not_configured",
+        required: ["RIBBOT_TRADING_BOT_TOKEN"],
+      },
+      { status: 503 },
+    );
+  }
+  if (auth === "denied") {
+    return json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const url = new URL(request.url);
+  const telegramUserId = stringValue(url.searchParams.get("telegramUserId"));
+  if (!telegramUserId || !TELEGRAM_USER_ID_PATTERN.test(telegramUserId)) {
+    return json({ error: "telegramUserId is required" }, { status: 400 });
+  }
+  try {
+    const resolution = await resolveTradingBotPerpsWallet(
+      env,
+      telegramUserId,
+    );
+    if ("error" in resolution) {
+      if (resolution.status === 404) {
+        return json(
+          { status: "not_found", telegramUserId },
+          { status: 404 },
+        );
+      }
+      if (
+        resolution.status === 409 &&
+        resolution.error === "Spot & NFT wallet is not configured"
+      ) {
+        return json({ status: "no_wallet", telegramUserId });
+      }
+      if (
+        resolution.status === 503 &&
+        resolution.error === "Trading account storage is not configured"
+      ) {
+        return json(
+          { status: "not_configured", required: ["TRADING_BOT_ACCOUNTS"] },
+          { status: 503 },
+        );
+      }
+      return json(
+        { error: resolution.error },
+        { status: resolution.status },
+      );
+    }
+
+    const { snapshot } = resolution;
+    const eventId = snapshot.profileAddress
+      ? `imperial-profile-funded:${snapshot.profileAddress}`
+      : null;
+    if (
+      snapshot.funded &&
+      eventId &&
+      !(await getStoredTradingBotEvent(env, telegramUserId, eventId))
+    ) {
+      await recordTradingBotAccountEvent(env, telegramUserId, {
+        eventId,
+        eventType: "imperial_deposit_confirmed",
+        metadata: {
+          authorityWalletAddress: snapshot.authorityWalletAddress,
+          profileAddress: snapshot.profileAddress,
+          profileIndex: snapshot.profileIndex,
+          uiAmountString: String(snapshot.profileUsdc),
+          minimumUiAmountString: String(snapshot.minimumProfileUsdc),
+          fundingLocation: "imperial_profile",
+        },
+      });
+    }
+
+    return json(
+      {
+        status: "ready",
+        ...snapshot,
+        checkedAt: new Date().toISOString(),
+      },
+      {
+        headers: {
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+        },
+      },
+    );
+  } catch (error) {
+    console.error("[trading-bot] Perps status lookup failed", error);
+    return json(
+      { error: "Perps status temporarily unavailable" },
+      { status: 502 },
+    );
+  }
+}
+
+export async function postTradingBotDeltaNeutralPreview(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  return forwardTradingBotDeltaNeutralRequest(request, env, "preview", false);
+}
+
+export async function postTradingBotDeltaNeutralStart(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  return forwardTradingBotDeltaNeutralRequest(request, env, "start", true);
+}
+
+export async function postTradingBotDeltaNeutralStatus(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  return forwardTradingBotDeltaNeutralRequest(request, env, "status", false);
+}
+
+export async function postTradingBotDeltaNeutralStop(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  return forwardTradingBotDeltaNeutralRequest(request, env, "stop", false);
 }
 
 export async function getTradingBotOperatorReviews(
@@ -3508,6 +4186,56 @@ export async function postTradingBotControlCode(
   );
 }
 
+export async function postTradingBotSetupReset(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  const auth = authorizeTradingBotRequest(request, env);
+  if (auth === "missing") {
+    return json(
+      {
+        status: "not_configured",
+        required: ["RIBBOT_TRADING_BOT_TOKEN"],
+      },
+      { status: 503 },
+    );
+  }
+  if (auth === "denied") {
+    return json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  let body: TradingBotSetupResetBody;
+  try {
+    body = (await request.json()) as TradingBotSetupResetBody;
+  } catch {
+    return json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const telegramUserId = stringValue(body.telegramUserId);
+  if (!telegramUserId || !TELEGRAM_USER_ID_PATTERN.test(telegramUserId)) {
+    return json({ error: "telegramUserId is required" }, { status: 400 });
+  }
+
+  const store = tradingBotAccountStore(env, telegramUserId);
+  if (!store) {
+    return json(
+      {
+        status: "not_configured",
+        required: ["TRADING_BOT_ACCOUNTS"],
+      },
+      { status: 503 },
+    );
+  }
+
+  return store.fetch(
+    new Request("https://trading-bot-account.local/setup-reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
 export async function postTradingBotControlSession(
   request: Request,
   env: Env,
@@ -3535,8 +4263,82 @@ export async function postTradingBotControlSession(
     );
   }
 
-  return store.fetch(
+  const response = await store.fetch(
     new Request("https://trading-bot-account.local/control-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  );
+  if (!response.ok) return response;
+
+  const data = (await response.json()) as Record<string, unknown> & {
+    account?: TradingBotAccountSnapshot;
+  };
+  const config = resolvePrivyConfig(env);
+  const automationSigner = config
+    ? automationSignerDescriptor(config)
+    : null;
+  let automationSignerReady = false;
+  const spotWallet = data.account
+    ? spotNftPrivyWallet(data.account)
+    : null;
+
+  if (config && automationSigner && spotWallet?.privyWalletId) {
+    try {
+      const privyWallet = await getPrivyWallet(
+        config,
+        spotWallet.privyWalletId,
+      );
+      automationSignerReady =
+        privyWallet.id === spotWallet.privyWalletId &&
+        privyWallet.address === spotWallet.solanaWalletAddress &&
+        privyWallet.chain_type === "solana" &&
+        hasConfiguredAutomationSigner(privyWallet, config);
+    } catch {
+      automationSignerReady = false;
+    }
+  }
+
+  return json(
+    {
+      ...data,
+      automationSigner,
+      automationSignerReady,
+    },
+    { status: response.status },
+  );
+}
+
+export async function postTradingBotControlImperial(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  let body: TradingBotControlImperialBody;
+  try {
+    body = (await request.json()) as TradingBotControlImperialBody;
+  } catch {
+    return json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const telegramUserId = stringValue(body.telegramUserId);
+  if (!telegramUserId || !TELEGRAM_USER_ID_PATTERN.test(telegramUserId)) {
+    return json({ error: "telegramUserId is required" }, { status: 400 });
+  }
+
+  const store = tradingBotAccountStore(env, telegramUserId);
+  if (!store) {
+    return json(
+      {
+        status: "not_configured",
+        required: ["TRADING_BOT_ACCOUNTS"],
+      },
+      { status: 503 },
+    );
+  }
+
+  return store.fetch(
+    new Request("https://trading-bot-account.local/control-imperial", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -3607,7 +4409,8 @@ export async function postTradingBotControlWallet(
     );
   }
 
-  return store.fetch(
+  const action = controlWalletActionValue(body.action);
+  const response = await store.fetch(
     new Request("https://trading-bot-account.local/control-wallet", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -3620,6 +4423,55 @@ export async function postTradingBotControlWallet(
       }),
     }),
   );
+  if (action !== "verify_signer" || !response.ok) return response;
+
+  const data = (await response.json()) as Record<string, unknown> & {
+    account?: TradingBotAccountSnapshot;
+  };
+  const config = resolvePrivyConfig(env);
+  const automationSigner = config
+    ? automationSignerDescriptor(config)
+    : null;
+  if (!config || !automationSigner) {
+    return json(
+      { error: "Ribbot automation signer is not configured" },
+      { status: 503 },
+    );
+  }
+
+  const spotWallet = data.account
+    ? spotNftPrivyWallet(data.account)
+    : null;
+  if (!spotWallet?.privyWalletId) {
+    return json(
+      { error: "Spot & NFT Wallet (Privy) is unavailable" },
+      { status: 409 },
+    );
+  }
+
+  try {
+    const privyWallet = await getPrivyWallet(config, spotWallet.privyWalletId);
+    const automationSignerReady =
+      privyWallet.id === spotWallet.privyWalletId &&
+      privyWallet.address === spotWallet.solanaWalletAddress &&
+      privyWallet.chain_type === "solana" &&
+      hasConfiguredAutomationSigner(privyWallet, config);
+    if (!automationSignerReady) {
+      return json(
+        {
+          error: "Privy did not confirm Ribbot access",
+          automationSignerReady: false,
+        },
+        { status: 409 },
+      );
+    }
+    return json({ ...data, automationSignerReady: true });
+  } catch {
+    return json(
+      { error: "Privy wallet verification is temporarily unavailable" },
+      { status: 503 },
+    );
+  }
 }
 
 export async function postTradingBotWallet(
@@ -3741,33 +4593,29 @@ export async function postTradingBotWallet(
       (await getUserByTelegramId(privyConfig, telegramUserId)) ??
       (await createTelegramUser(privyConfig, telegramUserId, username));
 
-    let managedWallets = findSolanaWallets(privyUser).map((wallet, index) => ({
-      walletId: wallet.id as string,
-      label: `Wallet ${index + 1}`,
+    const existingWallet = findSolanaWallets(privyUser)[0];
+    const provisionedWallet: PrivyWallet = existingWallet
+      ? {
+          id: existingWallet.id as string,
+          address: existingWallet.address as string,
+          chain_type: "solana",
+        }
+      : await createSolanaWallet(
+          privyConfig,
+          privyUser.id,
+          telegramUserId,
+          0,
+        );
+    const managedWallets = [provisionedWallet].map((wallet) => ({
+      walletId: wallet.id,
+      label: SPOT_NFT_WALLET_LABEL,
+      role: "spot_nft" as const,
       walletSource: "privy" as const,
       privyUserId: privyUser.id,
-      privyWalletId: wallet.id as string,
-      solanaWalletAddress: wallet.address as string,
+      privyWalletId: wallet.id,
+      solanaWalletAddress: wallet.address,
       createdAt: new Date().toISOString(),
     }));
-    if (managedWallets.length === 0) {
-      const wallet = await createSolanaWallet(
-        privyConfig,
-        privyUser.id,
-        telegramUserId,
-      );
-      managedWallets = [
-        {
-          walletId: wallet.id,
-          label: "Wallet 1",
-          walletSource: "privy",
-          privyUserId: privyUser.id,
-          privyWalletId: wallet.id,
-          solanaWalletAddress: wallet.address,
-          createdAt: new Date().toISOString(),
-        },
-      ];
-    }
     const account = await syncTradingBotPrivyWallets(env, {
       telegramUserId,
       username,
@@ -3889,17 +4737,14 @@ export async function postTradingBotExecution(
   if (!account) {
     return json({ error: "Trading account not found" }, { status: 404 });
   }
-  if (
-    account.walletSource !== "privy" ||
-    !account.privyWalletId ||
-    !account.solanaWalletAddress
-  ) {
+  const spotWallet = spotNftPrivyWallet(account);
+  if (!spotWallet?.privyWalletId) {
     return json(
-      { error: "Live execution requires an FTX/FrogX-managed Privy wallet" },
+      { error: "Live execution requires Spot & NFT Wallet (Privy)" },
       { status: 409 },
     );
   }
-  if (account.solanaWalletAddress !== normalized.userPublicKey) {
+  if (spotWallet.solanaWalletAddress !== normalized.userPublicKey) {
     return json({ error: "Trading wallet mismatch" }, { status: 409 });
   }
   if (account.botAccessRevokedAt) {
@@ -4059,7 +4904,7 @@ export async function postTradingBotExecution(
   let execution: PrivySolanaSignAndSendResponse;
   try {
     execution = await privySignAndSendSolanaTransaction(privyConfig, {
-      walletId: account.privyWalletId,
+      walletId: spotWallet.privyWalletId,
       transactionBase64: swap.txBase64,
       referenceId,
       sponsor: boolFlag(env.TRADING_BOT_SOLANA_GAS_SPONSORSHIP_ENABLED),
@@ -4567,17 +5412,14 @@ export async function postTradingBotWithdrawalExecution(
   if (!account) {
     return json({ error: "Trading account not found" }, { status: 404 });
   }
-  if (
-    account.walletSource !== "privy" ||
-    !account.privyWalletId ||
-    !account.solanaWalletAddress
-  ) {
+  const spotWallet = spotNftPrivyWallet(account);
+  if (!spotWallet?.privyWalletId) {
     return json(
-      { error: "Live withdrawals require an FTX/FrogX-managed Privy wallet" },
+      { error: "Live withdrawals require Spot & NFT Wallet (Privy)" },
       { status: 409 },
     );
   }
-  if (account.solanaWalletAddress !== normalized.userPublicKey) {
+  if (spotWallet.solanaWalletAddress !== normalized.userPublicKey) {
     return json({ error: "Trading wallet mismatch" }, { status: 409 });
   }
   if (account.botAccessRevokedAt) {
@@ -4635,7 +5477,7 @@ export async function postTradingBotWithdrawalExecution(
   let execution: PrivySolanaSignAndSendResponse;
   try {
     execution = await privySignAndSendSolanaTransaction(privyConfig, {
-      walletId: account.privyWalletId,
+      walletId: spotWallet.privyWalletId,
       transactionBase64: transfer.txBase64,
       referenceId,
       sponsor: boolFlag(env.TRADING_BOT_SOLANA_GAS_SPONSORSHIP_ENABLED),
@@ -6799,7 +7641,10 @@ export async function postTradingBotMarketRisk(
 }
 
 export class TradingBotAccountStore {
-  constructor(private readonly state: DurableObjectState) {
+  constructor(
+    private readonly state: DurableObjectState,
+    private readonly env: Env,
+  ) {
     this.state.blockConcurrencyWhile(async () => {
       this.state.storage.sql.exec(`
         CREATE TABLE IF NOT EXISTS accounts (
@@ -6881,6 +7726,33 @@ export class TradingBotAccountStore {
         );
         CREATE INDEX IF NOT EXISTS idx_control_sessions_user_expires
           ON control_sessions (telegram_user_id, expires_at);
+        CREATE TABLE IF NOT EXISTS imperial_sessions (
+          telegram_user_id TEXT PRIMARY KEY,
+          wallet_address TEXT NOT NULL,
+          jwt TEXT NOT NULL,
+          expires_at INTEGER NOT NULL,
+          connected_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          referrer_username TEXT NOT NULL DEFAULT '',
+          profile_address TEXT,
+          profile_usdc_native INTEGER,
+          profile_synced_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS delta_neutral_runs (
+          telegram_user_id TEXT NOT NULL,
+          run_id TEXT PRIMARY KEY,
+          idempotency_key TEXT NOT NULL,
+          wallet_address TEXT NOT NULL,
+          status TEXT NOT NULL,
+          service_status_json TEXT NOT NULL DEFAULT '{}',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE (telegram_user_id, idempotency_key)
+        );
+        CREATE INDEX IF NOT EXISTS idx_delta_neutral_runs_user_updated
+          ON delta_neutral_runs (telegram_user_id, updated_at);
+        CREATE INDEX IF NOT EXISTS idx_delta_neutral_runs_wallet_status
+          ON delta_neutral_runs (wallet_address, status);
         CREATE TABLE IF NOT EXISTS automation_orders (
           telegram_user_id TEXT NOT NULL,
           order_id TEXT PRIMARY KEY,
@@ -6951,6 +7823,10 @@ export class TradingBotAccountStore {
         "ALTER TABLE accounts ADD COLUMN referral_code TEXT",
         "ALTER TABLE accounts ADD COLUMN referred_by_code TEXT",
         "ALTER TABLE accounts ADD COLUMN referred_by_telegram_user_id TEXT",
+        "ALTER TABLE imperial_sessions ADD COLUMN referrer_username TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE imperial_sessions ADD COLUMN profile_address TEXT",
+        "ALTER TABLE imperial_sessions ADD COLUMN profile_usdc_native INTEGER",
+        "ALTER TABLE imperial_sessions ADD COLUMN profile_synced_at TEXT",
         "ALTER TABLE automation_orders ADD COLUMN scheduler_json TEXT NOT NULL DEFAULT '{}'",
         "ALTER TABLE automation_configs ADD COLUMN mint TEXT",
         "ALTER TABLE automation_configs ADD COLUMN sell_bps INTEGER",
@@ -7000,7 +7876,20 @@ export class TradingBotAccountStore {
       if (!account) {
         return json({ status: "not_found", telegramUserId }, { status: 404 });
       }
-      return json({ status: "ready", account });
+      const spotWallet = tradingBotAccountWalletByRole(account, "spot_nft");
+      return json({
+        status: "ready",
+        account,
+        setup: {
+          imperialConnected: Boolean(
+            spotWallet &&
+              this.getImperialSession(
+                telegramUserId,
+                spotWallet.solanaWalletAddress,
+              ),
+          ),
+        },
+      });
     }
 
     if (url.pathname === "/events" && request.method === "GET") {
@@ -7261,6 +8150,26 @@ export class TradingBotAccountStore {
       });
     }
 
+    if (url.pathname === "/setup-reset" && request.method === "POST") {
+      let body: TradingBotSetupResetBody;
+      try {
+        body = (await request.json()) as TradingBotSetupResetBody;
+      } catch {
+        return json({ error: "Invalid JSON body" }, { status: 400 });
+      }
+
+      const result = this.resetSetup(body);
+      if ("error" in result) {
+        return json({ error: result.error }, { status: result.status ?? 400 });
+      }
+      return json({
+        status: "reset",
+        telegramUserId: result.telegramUserId,
+        walletAddress: result.walletAddress,
+        resetAt: result.resetAt,
+      });
+    }
+
     if (url.pathname === "/control-session" && request.method === "POST") {
       let body: TradingBotControlSessionBody;
       try {
@@ -7278,7 +8187,77 @@ export class TradingBotAccountStore {
         account: result.account,
         sessionToken: result.sessionToken,
         sessionExpiresAt: result.sessionExpiresAt,
+        imperialConnection: result.imperialConnection,
       });
+    }
+
+    if (url.pathname === "/control-imperial" && request.method === "POST") {
+      let body: TradingBotControlImperialBody;
+      try {
+        body = (await request.json()) as TradingBotControlImperialBody;
+      } catch {
+        return json({ error: "Invalid JSON body" }, { status: 400 });
+      }
+
+      const result = await this.connectImperial(body);
+      if ("error" in result) {
+        return json({ error: result.error }, { status: result.status ?? 400 });
+      }
+      return json({
+        status: "connected",
+        connection: result.connection,
+      });
+    }
+
+    if (url.pathname === "/imperial-profile" && request.method === "POST") {
+      let body: Record<string, unknown>;
+      try {
+        body = (await request.json()) as Record<string, unknown>;
+      } catch {
+        return json({ error: "Invalid JSON body" }, { status: 400 });
+      }
+
+      const result = await this.getAuthenticatedImperialProfile(body);
+      if ("error" in result) {
+        return json({ error: result.error }, { status: result.status });
+      }
+      return json({ status: "ready", snapshot: result.snapshot });
+    }
+
+    if (
+      url.pathname === "/delta-neutral/preview" &&
+      request.method === "POST"
+    ) {
+      const body = await parseDeltaNeutralRequestBody(request);
+      if ("error" in body) return json(body, { status: 400 });
+      return this.previewDeltaNeutral(body.telegramUserId);
+    }
+
+    if (
+      url.pathname === "/delta-neutral/start" &&
+      request.method === "POST"
+    ) {
+      const body = await parseDeltaNeutralRequestBody(request, true);
+      if ("error" in body) return json(body, { status: 400 });
+      return this.startDeltaNeutral(body);
+    }
+
+    if (
+      url.pathname === "/delta-neutral/status" &&
+      request.method === "POST"
+    ) {
+      const body = await parseDeltaNeutralRequestBody(request);
+      if ("error" in body) return json(body, { status: 400 });
+      return this.getDeltaNeutralStatus(body.telegramUserId);
+    }
+
+    if (
+      url.pathname === "/delta-neutral/stop" &&
+      request.method === "POST"
+    ) {
+      const body = await parseDeltaNeutralRequestBody(request);
+      if ("error" in body) return json(body, { status: 400 });
+      return this.stopDeltaNeutral(body.telegramUserId);
     }
 
     if (url.pathname === "/control-preferences" && request.method === "POST") {
@@ -7816,24 +8795,35 @@ export class TradingBotAccountStore {
         wallet.walletId === walletId ||
         wallet.solanaWalletAddress === solanaWalletAddress,
     );
-    if (!existing && account.wallets.length >= 10) {
+    const replacedWallet =
+      existing ??
+      (walletSource === "privy"
+        ? account.wallets.find((wallet) => wallet.walletSource === "privy")
+        : undefined);
+    if (!replacedWallet && account.wallets.length >= 10) {
       return { error: "Trading accounts support at most 10 wallets" };
     }
     const slot: TradingBotAccountWalletSlot = {
       walletId,
-      label: existing?.label ?? `Wallet ${account.wallets.length + 1}`,
+      label:
+        walletSource === "external"
+          ? PORTFOLIO_WALLET_LABEL
+          : SPOT_NFT_WALLET_LABEL,
+      role: walletSource === "external" ? "portfolio" : "spot_nft",
       walletSource,
       ...(privyUserId ? { privyUserId } : {}),
       ...(privyWalletId ? { privyWalletId } : {}),
       solanaWalletAddress,
-      createdAt: existing?.createdAt ?? new Date().toISOString(),
+      createdAt: replacedWallet?.createdAt ?? new Date().toISOString(),
     };
-    account.wallets = existing
+    account.wallets = replacedWallet
       ? account.wallets.map((wallet) =>
-          wallet.walletId === existing.walletId ? slot : wallet,
+          wallet.walletId === replacedWallet.walletId ? slot : wallet,
         )
       : [...account.wallets, slot];
-    activateTradingBotAccountWallet(account, slot);
+    if (slot.role !== "portfolio") {
+      activateTradingBotAccountWallet(account, slot);
+    }
     account.updatedAt = new Date().toISOString();
 
     this.saveAccount(account);
@@ -7875,20 +8865,17 @@ export class TradingBotAccountStore {
     const existingById = new Map(
       account.wallets.map((wallet) => [wallet.walletId, wallet]),
     );
-    const managed = incoming.slice(0, 10).map((wallet, index) => ({
+    const managed = incoming.slice(0, 1).map((wallet) => ({
       ...wallet,
-      label:
-        existingById.get(wallet.walletId)?.label ?? `Wallet ${index + 1}`,
+      label: SPOT_NFT_WALLET_LABEL,
+      role: "spot_nft" as const,
       createdAt: existingById.get(wallet.walletId)?.createdAt ?? wallet.createdAt,
     }));
     account.wallets = [
       ...account.wallets.filter((wallet) => wallet.walletSource === "external"),
       ...managed,
     ].slice(0, 10);
-    const active =
-      managed.find((wallet) => wallet.walletId === account.activeWalletId) ??
-      managed[0];
-    activateTradingBotAccountWallet(account, active);
+    activateTradingBotAccountWallet(account, managed[0]);
     account.updatedAt = now;
     this.saveAccount(account);
     this.recordAccountEvent(account.telegramUserId, "wallet_inventory_synced", {
@@ -9216,6 +10203,7 @@ export class TradingBotAccountStore {
         account: TradingBotAccountSnapshot;
         sessionToken: string;
         sessionExpiresAt: string;
+        imperialConnection: TradingBotImperialConnection | null;
       }
     | { error: string; status?: number }
   > {
@@ -9295,7 +10283,934 @@ export class TradingBotAccountStore {
       sessionExpiresAt,
     });
 
-    return { account, sessionToken, sessionExpiresAt };
+    return {
+      account,
+      sessionToken,
+      sessionExpiresAt,
+      imperialConnection: await this.getImperialConnection(
+        telegramUserId,
+        tradingBotAccountWalletByRole(account, "spot_nft")
+          ?.solanaWalletAddress,
+      ),
+    };
+  }
+
+  private async connectImperial(
+    body: TradingBotControlImperialBody,
+  ): Promise<
+    | { connection: TradingBotImperialConnection }
+    | { error: string; status?: number }
+  > {
+    const session = await this.verifyControlSession(body);
+    if ("error" in session) return session;
+
+    const account = this.getAccount(session.telegramUserId);
+    if (!account) return { error: "Account not found", status: 404 };
+
+    const wallet = stringValue(body.wallet);
+    if (!wallet || !SOLANA_ADDRESS_PATTERN.test(wallet)) {
+      return { error: "wallet must be a Solana address" };
+    }
+    const authorityWallet = tradingBotAccountWalletByRole(account, "spot_nft");
+    if (!authorityWallet) {
+      return { error: "Spot & NFT wallet is not configured", status: 409 };
+    }
+    if (authorityWallet.solanaWalletAddress !== wallet) {
+      return { error: "Spot & NFT wallet mismatch", status: 409 };
+    }
+
+    const message = stringValue(body.message);
+    const expectedPrefix = `imperial:mobile-connect:${wallet}:`;
+    const nonce = message?.startsWith(expectedPrefix)
+      ? message.slice(expectedPrefix.length)
+      : "";
+    if (
+      !message ||
+      message.length > 160 ||
+      !nonce ||
+      !/^\d{10,13}$/.test(nonce)
+    ) {
+      return { error: "Imperial authorization message is invalid" };
+    }
+
+    const signature = stringValue(body.signature);
+    if (
+      !signature ||
+      !/^[1-9A-HJ-NP-Za-km-z]{80,100}$/.test(signature)
+    ) {
+      return { error: "Imperial authorization signature is invalid" };
+    }
+
+    const connectResult = await this.postImperialJson(
+      "/api/v1/mobile/connect",
+      { wallet, message, signature },
+    );
+    if ("error" in connectResult) return connectResult;
+
+    const code = stringValue(connectResult.data.code);
+    if (!code) {
+      return {
+        error: "Imperial returned an invalid connection code",
+        status: 502,
+      };
+    }
+
+    const exchangeResult = await this.postImperialJson(
+      "/api/v1/mobile/exchange",
+      { code },
+    );
+    if ("error" in exchangeResult) return exchangeResult;
+
+    const jwt = stringValue(exchangeResult.data.jwt);
+    const expiresAt = Number(exchangeResult.data.expiresAt);
+    const nowUnix = Math.floor(Date.now() / 1000);
+    if (
+      !jwt ||
+      !Number.isSafeInteger(expiresAt) ||
+      expiresAt <= nowUnix
+    ) {
+      return {
+        error: "Imperial returned an invalid authorization session",
+        status: 502,
+      };
+    }
+
+    const referralResult = await ensureImperialSbfReferral(wallet);
+    if ("error" in referralResult) return referralResult;
+
+    const connectedAt = new Date().toISOString();
+    this.state.storage.sql.exec(
+      `INSERT INTO imperial_sessions (
+        telegram_user_id, wallet_address, jwt, expires_at, connected_at, updated_at,
+        referrer_username, profile_address, profile_usdc_native, profile_synced_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)
+      ON CONFLICT(telegram_user_id) DO UPDATE SET
+        wallet_address = excluded.wallet_address,
+        jwt = excluded.jwt,
+        expires_at = excluded.expires_at,
+        connected_at = excluded.connected_at,
+        updated_at = excluded.updated_at,
+        referrer_username = excluded.referrer_username,
+        profile_address = NULL,
+        profile_usdc_native = NULL,
+        profile_synced_at = NULL`,
+      session.telegramUserId,
+      wallet,
+      jwt,
+      expiresAt,
+      connectedAt,
+      connectedAt,
+      referralResult.referrerUsername,
+    );
+
+    const connection =
+      (await this.getImperialConnection(session.telegramUserId, wallet)) ?? {
+        status: "connected" as const,
+        authorityWalletAddress: wallet,
+        profileAddress: null,
+        profileIndex: DELTA_NEUTRAL_PROFILE_INDEX,
+        expiresAt,
+        connectedAt,
+        referrerUsername: referralResult.referrerUsername,
+      };
+    this.recordAccountEvent(session.telegramUserId, "imperial_connected", {
+      authorityWalletAddress: wallet,
+      profileAddress: connection.profileAddress,
+      profileIndex: connection.profileIndex,
+      expiresAt,
+      connectedAt,
+      referrerUsername: referralResult.referrerUsername,
+    });
+
+    return { connection };
+  }
+
+  private async previewDeltaNeutral(
+    telegramUserId: string,
+  ): Promise<Response> {
+    const missing = deltaNeutralServiceMissingRequirements(this.env, false);
+    if (missing.length > 0) {
+      return json(
+        { status: "not_configured", required: missing },
+        { status: 503 },
+      );
+    }
+    const context = this.getDeltaNeutralContext(telegramUserId);
+    if ("error" in context) {
+      return json({ error: context.error }, { status: context.status });
+    }
+
+    const result = await this.callDeltaNeutralService("preview", {
+      accountId: telegramUserId,
+      wallet: context.walletAddress,
+      imperialJwt: context.imperialSession.jwt,
+      imperialJwtExpiresAtUnix: context.imperialSession.expires_at,
+      profileIndex: DELTA_NEUTRAL_PROFILE_INDEX,
+    });
+    if ("error" in result) {
+      return json(
+        { error: result.error, retryable: result.retryable },
+        { status: result.status },
+      );
+    }
+    const preview = deltaNeutralPreviewValue(
+      result.data,
+      context.walletAddress,
+    );
+    if (!preview) {
+      return json(
+        { error: "Delta Neutral returned an invalid preview" },
+        { status: 502 },
+      );
+    }
+
+    return json(
+      {
+        status: "ready",
+        defaultStrategy: DELTA_NEUTRAL_STRATEGY,
+        defaultPreset: DELTA_NEUTRAL_PRESET,
+        preview,
+        liveExecutionEnabled: isDeltaNeutralLiveExecutionEnabled(this.env),
+      },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  }
+
+  private async startDeltaNeutral(body: {
+    telegramUserId: string;
+    idempotencyKey: string;
+    confirmLive: true;
+  }): Promise<Response> {
+    const missing = deltaNeutralServiceMissingRequirements(this.env, true);
+    if (missing.length > 0) {
+      return json(
+        { status: "not_configured", required: missing },
+        { status: 503 },
+      );
+    }
+    const context = this.getDeltaNeutralContext(body.telegramUserId);
+    if ("error" in context) {
+      return json({ error: context.error }, { status: context.status });
+    }
+
+    const existing = this.getDeltaNeutralRunByIdempotencyKey(
+      body.telegramUserId,
+      body.idempotencyKey,
+    );
+    if (existing) {
+      return json(
+        {
+          status: existing.status,
+          idempotent: true,
+          run: deltaNeutralStoredRunValue(existing),
+        },
+        { headers: { "Cache-Control": "no-store" } },
+      );
+    }
+
+    const active = this.getActiveDeltaNeutralRun(body.telegramUserId);
+    if (active) {
+      return json(
+        {
+          error: "Delta Neutral already has an active run",
+          run: deltaNeutralStoredRunValue(active),
+        },
+        { status: 409 },
+      );
+    }
+
+    const previewResult = await this.callDeltaNeutralService("preview", {
+      accountId: body.telegramUserId,
+      wallet: context.walletAddress,
+      imperialJwt: context.imperialSession.jwt,
+      imperialJwtExpiresAtUnix: context.imperialSession.expires_at,
+      profileIndex: DELTA_NEUTRAL_PROFILE_INDEX,
+    });
+    if ("error" in previewResult) {
+      return json(
+        { error: previewResult.error, retryable: previewResult.retryable },
+        { status: previewResult.status },
+      );
+    }
+    const preview = deltaNeutralPreviewValue(
+      previewResult.data,
+      context.walletAddress,
+    );
+    if (!preview) {
+      return json(
+        { error: "Delta Neutral returned an invalid preview" },
+        { status: 502 },
+      );
+    }
+    if (!preview.entryCapCompatible) {
+      return json(
+        {
+          status: "blocked",
+          error: deltaNeutralEntryCapBlocker(
+            preview.serviceLiveEntryCapUsd,
+          ),
+          blockers: preview.blockers,
+        },
+        { status: 409 },
+      );
+    }
+
+    const runId = `ribbot-${body.idempotencyKey}`;
+    const now = new Date().toISOString();
+    this.state.storage.sql.exec(
+      `INSERT INTO delta_neutral_runs (
+        telegram_user_id, run_id, idempotency_key, wallet_address, status,
+        service_status_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 'launching', '{}', ?, ?)`,
+      body.telegramUserId,
+      runId,
+      body.idempotencyKey,
+      context.walletAddress,
+      now,
+      now,
+    );
+
+    const result = await this.callDeltaNeutralService("start", {
+      accountId: body.telegramUserId,
+      wallet: context.walletAddress,
+      imperialJwt: context.imperialSession.jwt,
+      imperialJwtExpiresAtUnix: context.imperialSession.expires_at,
+      idempotencyKey: body.idempotencyKey,
+      confirmLive: body.confirmLive,
+      strategy: DELTA_NEUTRAL_STRATEGY,
+      preset: DELTA_NEUTRAL_PRESET,
+      profileIndex: DELTA_NEUTRAL_PROFILE_INDEX,
+      dailyBudgetUsd: DELTA_NEUTRAL_DAILY_BUDGET_USD,
+      waitSecs: DELTA_NEUTRAL_WAIT_SECONDS,
+      retryUntilCleanSecs: DELTA_NEUTRAL_RETRY_UNTIL_CLEAN_SECONDS,
+      maxCycles: DELTA_NEUTRAL_MAX_CYCLES,
+    });
+    if ("error" in result) {
+      const status = result.retryable ? "pending_reconciliation" : "blocked";
+      this.updateDeltaNeutralRun(runId, status, {});
+      return json(
+        {
+          status,
+          error: result.error,
+          retryable: result.retryable,
+          runId,
+        },
+        { status: result.status },
+      );
+    }
+
+    const serviceRun = deltaNeutralRunStatusValue(
+      result.data,
+      context.walletAddress,
+    );
+    if (!serviceRun) {
+      this.updateDeltaNeutralRun(runId, "pending_reconciliation", {});
+      return json(
+        {
+          status: "pending_reconciliation",
+          error: "Delta Neutral returned an invalid start response",
+          retryable: true,
+          runId,
+        },
+        { status: 502 },
+      );
+    }
+
+    const status = deltaNeutralRunState(serviceRun);
+    this.updateDeltaNeutralRun(runId, status, serviceRun);
+    this.recordAccountEvent(body.telegramUserId, "delta_neutral_started", {
+      runId,
+      walletAddress: context.walletAddress,
+      strategy: DELTA_NEUTRAL_STRATEGY,
+      preset: DELTA_NEUTRAL_PRESET,
+      maxCycles: DELTA_NEUTRAL_MAX_CYCLES,
+      liveEntryCapUsd: DELTA_NEUTRAL_LIVE_ENTRY_CAP_USD,
+      dailyBudgetUsd: DELTA_NEUTRAL_DAILY_BUDGET_USD,
+    });
+    return json(
+      { status, idempotent: false, run: serviceRun },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  }
+
+  private async getDeltaNeutralStatus(
+    telegramUserId: string,
+  ): Promise<Response> {
+    const missing = deltaNeutralServiceMissingRequirements(this.env, false);
+    if (missing.length > 0) {
+      return json(
+        { status: "not_configured", required: missing },
+        { status: 503 },
+      );
+    }
+    const context = this.getDeltaNeutralContext(telegramUserId);
+    if ("error" in context) {
+      return json({ error: context.error }, { status: context.status });
+    }
+
+    const result = await this.callDeltaNeutralService("status", {
+      accountId: telegramUserId,
+      wallet: context.walletAddress,
+    });
+    if ("error" in result) {
+      return json(
+        { error: result.error, retryable: result.retryable },
+        { status: result.status },
+      );
+    }
+    const serviceStatus = deltaNeutralServiceStatusValue(
+      result.data,
+      context.walletAddress,
+    );
+    if (!serviceStatus) {
+      return json(
+        { error: "Delta Neutral returned an invalid status" },
+        { status: 502 },
+      );
+    }
+
+    const latest = this.getLatestDeltaNeutralRun(telegramUserId);
+    if (latest && serviceStatus.run) {
+      this.updateDeltaNeutralRun(
+        latest.run_id,
+        deltaNeutralRunState(serviceStatus.run),
+        serviceStatus.run,
+      );
+    }
+    return json(
+      {
+        status: "ready",
+        defaultStrategy: DELTA_NEUTRAL_STRATEGY,
+        defaultPreset: DELTA_NEUTRAL_PRESET,
+        configured: serviceStatus.configured,
+        enabled: serviceStatus.enabled,
+        liveExecutionEnabled:
+          isDeltaNeutralLiveExecutionEnabled(this.env) &&
+          serviceStatus.liveEnabled,
+        run:
+          serviceStatus.run ??
+          (latest ? deltaNeutralStoredRunValue(latest) : null),
+      },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  }
+
+  private async stopDeltaNeutral(telegramUserId: string): Promise<Response> {
+    const missing = deltaNeutralServiceMissingRequirements(this.env, false);
+    if (missing.length > 0) {
+      return json(
+        { status: "not_configured", required: missing },
+        { status: 503 },
+      );
+    }
+    const context = this.getDeltaNeutralContext(telegramUserId);
+    if ("error" in context) {
+      return json({ error: context.error }, { status: context.status });
+    }
+
+    const result = await this.callDeltaNeutralService("stop", {
+      accountId: telegramUserId,
+      wallet: context.walletAddress,
+    });
+    if ("error" in result) {
+      return json(
+        { error: result.error, retryable: result.retryable },
+        { status: result.status },
+      );
+    }
+    const serviceRun = deltaNeutralRunStatusValue(
+      result.data,
+      context.walletAddress,
+    );
+    if (!serviceRun) {
+      return json(
+        { error: "Delta Neutral returned an invalid stop response" },
+        { status: 502 },
+      );
+    }
+
+    const latest = this.getLatestDeltaNeutralRun(telegramUserId);
+    if (latest) {
+      this.updateDeltaNeutralRun(
+        latest.run_id,
+        deltaNeutralRunState(serviceRun),
+        serviceRun,
+      );
+    }
+    this.recordAccountEvent(telegramUserId, "delta_neutral_stop_requested", {
+      runId: latest?.run_id ?? serviceRun.runId,
+      walletAddress: context.walletAddress,
+    });
+    return json(
+      { status: deltaNeutralRunState(serviceRun), run: serviceRun },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  }
+
+  private getDeltaNeutralContext(
+    telegramUserId: string,
+  ):
+    | {
+        walletAddress: string;
+        imperialSession: TradingBotImperialSessionRow;
+      }
+    | { error: string; status: number } {
+    const account = this.getAccount(telegramUserId);
+    if (!account) return { error: "Account not found", status: 404 };
+    if (account.botAccessRevokedAt) {
+      return { error: "Ribbot access is disabled", status: 403 };
+    }
+    const wallet = tradingBotAccountWalletByRole(account, "spot_nft");
+    if (!wallet) {
+      return { error: "Spot & NFT wallet is not configured", status: 409 };
+    }
+    const imperialSession = this.getImperialSession(
+      telegramUserId,
+      wallet.solanaWalletAddress,
+    );
+    if (!imperialSession) {
+      return { error: "Reconnect Imperial and try again", status: 409 };
+    }
+    return {
+      walletAddress: wallet.solanaWalletAddress,
+      imperialSession,
+    };
+  }
+
+  private getImperialSession(
+    telegramUserId: string,
+    activeWalletAddress: string,
+  ): TradingBotImperialSessionRow | null {
+    const row =
+      this.state.storage.sql
+        .exec<TradingBotImperialSessionRow>(
+          "SELECT * FROM imperial_sessions WHERE telegram_user_id = ?",
+          telegramUserId,
+        )
+        .toArray()[0] ?? null;
+    if (!row) return null;
+    if (row.expires_at <= Math.floor(Date.now() / 1000) + 60) {
+      if (row.expires_at <= Math.floor(Date.now() / 1000)) {
+        this.state.storage.sql.exec(
+          "DELETE FROM imperial_sessions WHERE telegram_user_id = ?",
+          telegramUserId,
+        );
+      }
+      return null;
+    }
+    if (row.wallet_address !== activeWalletAddress) return null;
+    if (
+      row.referrer_username?.toLowerCase() !== IMPERIAL_REFERRER_USERNAME
+    ) {
+      return null;
+    }
+    return row;
+  }
+
+  private imperialProfileSnapshot(
+    row: TradingBotImperialSessionRow,
+    balanceStatus: "live" | "cached",
+  ): TradingBotProfilePerpsWalletSnapshot | null {
+    if (
+      !row.profile_address ||
+      !SOLANA_ADDRESS_PATTERN.test(row.profile_address) ||
+      !Number.isSafeInteger(row.profile_usdc_native) ||
+      Number(row.profile_usdc_native) < 0 ||
+      !row.profile_synced_at ||
+      !Number.isFinite(Date.parse(row.profile_synced_at))
+    ) {
+      return null;
+    }
+
+    const profileUsdc = Number(row.profile_usdc_native) / 1_000_000;
+    return {
+      telegramUserId: row.telegram_user_id,
+      authorityWalletAddress: row.wallet_address,
+      profileAddress: row.profile_address,
+      profileIndex: DELTA_NEUTRAL_PROFILE_INDEX,
+      profileUsdc,
+      minimumProfileUsdc: DELTA_NEUTRAL_MINIMUM_PROFILE_USDC,
+      funded: profileUsdc >= DELTA_NEUTRAL_MINIMUM_PROFILE_USDC,
+      fundingLocation: "imperial_profile",
+      imperialProfileVerified: true,
+      balanceStatus,
+      balanceUpdatedAt: row.profile_synced_at,
+    };
+  }
+
+  private async refreshImperialProfile(
+    row: TradingBotImperialSessionRow,
+  ): Promise<TradingBotProfilePerpsWalletResolution> {
+    const cached = this.imperialProfileSnapshot(row, "cached");
+    try {
+      const response = await fetch(
+        `${DEFAULT_IMPERIAL_API_BASE_URL}/api/v1/mobile/balances`,
+        {
+          headers: { Authorization: `Bearer ${row.jwt}` },
+          signal: AbortSignal.timeout(IMPERIAL_PROFILE_REQUEST_TIMEOUT_MS),
+        },
+      );
+      const data = (await response.json().catch(() => null)) as unknown;
+      const record = recordValue(data);
+      if (!response.ok) {
+        if (cached) return { snapshot: cached };
+        return {
+          error:
+            response.status === 401
+              ? "Reconnect Imperial and try again"
+              : "Imperial profile is temporarily unavailable",
+          status: response.status === 401 ? 409 : 502,
+        };
+      }
+      if (stringValue(record?.wallet) !== row.wallet_address) {
+        return cached
+          ? { snapshot: cached }
+          : { error: "Imperial returned the wrong wallet", status: 502 };
+      }
+
+      const profiles = Array.isArray(record?.profiles)
+        ? record.profiles.map(recordValue).filter(Boolean)
+        : [];
+      const profile = profiles.find(
+        (candidate) =>
+          numberValue(candidate?.profileIndex) === DELTA_NEUTRAL_PROFILE_INDEX,
+      );
+      const profileAddress = stringValue(profile?.profilePda);
+      const profileUsdcNative = numberValue(profile?.usdc);
+      if (
+        !profileAddress ||
+        !SOLANA_ADDRESS_PATTERN.test(profileAddress) ||
+        typeof profileUsdcNative !== "number" ||
+        !Number.isSafeInteger(profileUsdcNative) ||
+        profileUsdcNative < 0
+      ) {
+        return cached
+          ? { snapshot: cached }
+          : { error: "Imperial returned an invalid profile", status: 502 };
+      }
+
+      const syncedAt = new Date().toISOString();
+      this.state.storage.sql.exec(
+        `UPDATE imperial_sessions
+        SET profile_address = ?, profile_usdc_native = ?, profile_synced_at = ?,
+          updated_at = ?
+        WHERE telegram_user_id = ? AND wallet_address = ?`,
+        profileAddress,
+        profileUsdcNative,
+        syncedAt,
+        syncedAt,
+        row.telegram_user_id,
+        row.wallet_address,
+      );
+      const snapshot = this.imperialProfileSnapshot(
+        {
+          ...row,
+          profile_address: profileAddress,
+          profile_usdc_native: profileUsdcNative,
+          profile_synced_at: syncedAt,
+        },
+        "live",
+      );
+      if (!snapshot) {
+        return { error: "Imperial returned an invalid profile", status: 502 };
+      }
+      return { snapshot };
+    } catch {
+      return cached
+        ? { snapshot: cached }
+        : { error: "Imperial profile is temporarily unavailable", status: 502 };
+    }
+  }
+
+  private async getAuthenticatedImperialProfile(
+    body: Record<string, unknown>,
+  ): Promise<TradingBotProfilePerpsWalletResolution> {
+    const telegramUserId = stringValue(body.telegramUserId);
+    const privyUserId = stringValue(body.privyUserId);
+    const authorityWalletAddress = stringValue(body.authorityWalletAddress);
+    if (
+      !telegramUserId ||
+      !TELEGRAM_USER_ID_PATTERN.test(telegramUserId) ||
+      !privyUserId ||
+      !authorityWalletAddress ||
+      !SOLANA_ADDRESS_PATTERN.test(authorityWalletAddress)
+    ) {
+      return { error: "Account identity is invalid", status: 400 };
+    }
+
+    const account = this.getAccount(telegramUserId);
+    const wallet = account
+      ? tradingBotAccountWalletByRole(account, "spot_nft")
+      : null;
+    if (!account || !wallet) {
+      return { error: "Account not found", status: 404 };
+    }
+    if (
+      account.privyUserId !== privyUserId ||
+      wallet.walletSource !== "privy" ||
+      wallet.solanaWalletAddress !== authorityWalletAddress
+    ) {
+      return { error: "Account identity does not match", status: 403 };
+    }
+
+    const session = this.getImperialSession(
+      telegramUserId,
+      authorityWalletAddress,
+    );
+    if (!session) {
+      return { error: "Imperial is not connected", status: 409 };
+    }
+    return this.refreshImperialProfile(session);
+  }
+
+  private async callDeltaNeutralService(
+    action: "preview" | "start" | "status" | "stop",
+    body: Record<string, unknown>,
+  ): Promise<
+    | { data: unknown }
+    | { error: string; status: number; retryable: boolean }
+  > {
+    const service = resolveDeltaNeutralService(this.env);
+    if (!service) {
+      return {
+        error: "Delta Neutral service is not configured",
+        status: 503,
+        retryable: false,
+      };
+    }
+    try {
+      const response = await fetch(
+        `${service.url}/api/ribbot/delta-neutral/${action}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${service.token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        },
+      );
+      const data = (await response.json().catch(() => null)) as unknown;
+      if (!response.ok) {
+        const record = recordValue(data);
+        return {
+          error:
+            stringValue(record?.error) ??
+            "Delta Neutral rejected the request",
+          status: deltaNeutralProxyStatus(response.status),
+          retryable: response.status >= 500,
+        };
+      }
+      return { data };
+    } catch {
+      return {
+        error: "Delta Neutral is temporarily unavailable",
+        status: 502,
+        retryable: true,
+      };
+    }
+  }
+
+  private getDeltaNeutralRunByIdempotencyKey(
+    telegramUserId: string,
+    idempotencyKey: string,
+  ): TradingBotDeltaNeutralRunRow | null {
+    return (
+      this.state.storage.sql
+        .exec<TradingBotDeltaNeutralRunRow>(
+          `SELECT * FROM delta_neutral_runs
+          WHERE telegram_user_id = ? AND idempotency_key = ?
+          LIMIT 1`,
+          telegramUserId,
+          idempotencyKey,
+        )
+        .toArray()[0] ?? null
+    );
+  }
+
+  private getActiveDeltaNeutralRun(
+    telegramUserId: string,
+  ): TradingBotDeltaNeutralRunRow | null {
+    return (
+      this.state.storage.sql
+        .exec<TradingBotDeltaNeutralRunRow>(
+          `SELECT * FROM delta_neutral_runs
+          WHERE telegram_user_id = ?
+            AND status IN ('launching', 'running', 'stopping', 'pending_reconciliation')
+          ORDER BY updated_at DESC
+          LIMIT 1`,
+          telegramUserId,
+        )
+        .toArray()[0] ?? null
+    );
+  }
+
+  private getLatestDeltaNeutralRun(
+    telegramUserId: string,
+  ): TradingBotDeltaNeutralRunRow | null {
+    return (
+      this.state.storage.sql
+        .exec<TradingBotDeltaNeutralRunRow>(
+          `SELECT * FROM delta_neutral_runs
+          WHERE telegram_user_id = ?
+          ORDER BY updated_at DESC
+          LIMIT 1`,
+          telegramUserId,
+        )
+        .toArray()[0] ?? null
+    );
+  }
+
+  private updateDeltaNeutralRun(
+    runId: string,
+    status: string,
+    serviceStatus: object,
+  ): void {
+    this.state.storage.sql.exec(
+      `UPDATE delta_neutral_runs
+      SET status = ?, service_status_json = ?, updated_at = ?
+      WHERE run_id = ?`,
+      status,
+      JSON.stringify(serviceStatus),
+      new Date().toISOString(),
+      runId,
+    );
+  }
+
+  private resetSetup(
+    body: TradingBotSetupResetBody,
+  ):
+    | {
+        telegramUserId: string;
+        walletAddress: string | null;
+        resetAt: string;
+      }
+    | { error: string; status?: number } {
+    const telegramUserId = stringValue(body.telegramUserId);
+    if (!telegramUserId || !TELEGRAM_USER_ID_PATTERN.test(telegramUserId)) {
+      return { error: "telegramUserId is required" };
+    }
+
+    const account = this.getAccount(telegramUserId);
+    if (!account) return { error: "Account not found", status: 404 };
+
+    this.state.storage.sql.exec(
+      "DELETE FROM imperial_sessions WHERE telegram_user_id = ?",
+      telegramUserId,
+    );
+    this.state.storage.sql.exec(
+      "DELETE FROM control_sessions WHERE telegram_user_id = ?",
+      telegramUserId,
+    );
+    this.state.storage.sql.exec(
+      "DELETE FROM control_codes WHERE telegram_user_id = ?",
+      telegramUserId,
+    );
+
+    const resetAt = new Date().toISOString();
+    account.botAccessRevokedAt = resetAt;
+    account.updatedAt = resetAt;
+    this.saveAccount(account);
+    this.recordAccountEvent(telegramUserId, "setup_reset", {
+      walletAddress: account.solanaWalletAddress,
+      botAccessRevokedAt: resetAt,
+      resetAt,
+    });
+
+    return {
+      telegramUserId,
+      walletAddress: account.solanaWalletAddress ?? null,
+      resetAt,
+    };
+  }
+
+  private async postImperialJson(
+    path: string,
+    body: Record<string, unknown>,
+  ): Promise<
+    | { data: Record<string, unknown> }
+    | { error: string; status?: number }
+  > {
+    try {
+      const response = await fetch(`${DEFAULT_IMPERIAL_API_BASE_URL}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = (await response.json().catch(() => null)) as unknown;
+      const record =
+        data && typeof data === "object" && !Array.isArray(data)
+          ? (data as Record<string, unknown>)
+          : null;
+
+      if (!response.ok) {
+        const detail =
+          stringValue(record?.error) ?? stringValue(record?.message);
+        return {
+          error: detail
+            ? `Imperial rejected the connection: ${detail.slice(0, 200)}`
+            : "Imperial rejected the connection",
+          status:
+            response.status === 400 || response.status === 401 ? 400 : 502,
+        };
+      }
+      if (!record) {
+        return { error: "Imperial returned an invalid response", status: 502 };
+      }
+      return { data: record };
+    } catch {
+      return {
+        error: "Imperial is temporarily unavailable",
+        status: 502,
+      };
+    }
+  }
+
+  private async getImperialConnection(
+    telegramUserId: string,
+    activeWalletAddress?: string,
+  ): Promise<TradingBotImperialConnection | null> {
+    const row =
+      this.state.storage.sql
+        .exec<TradingBotImperialSessionRow>(
+          "SELECT * FROM imperial_sessions WHERE telegram_user_id = ?",
+          telegramUserId,
+        )
+        .toArray()[0] ?? null;
+    if (!row) return null;
+
+    if (row.expires_at <= Math.floor(Date.now() / 1000)) {
+      this.state.storage.sql.exec(
+        "DELETE FROM imperial_sessions WHERE telegram_user_id = ?",
+        telegramUserId,
+      );
+      return null;
+    }
+    if (activeWalletAddress && row.wallet_address !== activeWalletAddress) {
+      return null;
+    }
+    if (
+      row.referrer_username?.toLowerCase() !==
+      IMPERIAL_REFERRER_USERNAME
+    ) {
+      return null;
+    }
+
+    const profileResult = await this.refreshImperialProfile(row);
+    const profileAddress =
+      "snapshot" in profileResult
+        ? profileResult.snapshot.profileAddress
+        : null;
+
+    return {
+      status: "connected",
+      authorityWalletAddress: row.wallet_address,
+      profileAddress,
+      profileIndex: DELTA_NEUTRAL_PROFILE_INDEX,
+      expiresAt: row.expires_at,
+      connectedAt: row.connected_at,
+      referrerUsername: IMPERIAL_REFERRER_USERNAME,
+    };
   }
 
   private async applyControlPreference(
@@ -9339,7 +11254,12 @@ export class TradingBotAccountStore {
     body: TradingBotControlWalletBody,
   ): Promise<
     | {
-        status: "claim_requested" | "export_requested" | "revoked" | "restored";
+        status:
+          | "claim_requested"
+          | "export_requested"
+          | "revoked"
+          | "restored"
+          | "signer_check_requested";
         action: TradingBotControlWalletAction;
         account: TradingBotAccountSnapshot;
         updatedAt: string;
@@ -9353,31 +11273,61 @@ export class TradingBotAccountStore {
 
     const action = controlWalletActionValue(body.action);
     if (!action) {
-      return { error: "action must be claim, export, revoke, or restore" };
+      return {
+        error:
+          "action must be claim, export, revoke, restore, or verify_signer",
+      };
     }
 
     const account = this.getAccount(session.telegramUserId);
     if (!account) return { error: "Account not found", status: 404 };
-    if (
-      account.walletSource !== "privy" ||
-      !account.privyUserId ||
-      !account.privyWalletId ||
-      !account.solanaWalletAddress
-    ) {
+    const requestedWalletAddress = stringValue(body.userPublicKey);
+    const managedWallet =
+      account.wallets.find(
+        (wallet) =>
+          wallet.role === "spot_nft" &&
+          wallet.walletSource === "privy" &&
+          (!requestedWalletAddress ||
+            wallet.solanaWalletAddress === requestedWalletAddress),
+      ) ??
+      (account.wallets.length === 0 &&
+      account.walletSource === "privy" &&
+      account.privyUserId &&
+      account.privyWalletId &&
+      account.solanaWalletAddress
+        ? {
+            walletId: account.privyWalletId,
+            label: "Active wallet",
+            role: "spot_nft" as const,
+            walletSource: "privy" as const,
+            privyUserId: account.privyUserId,
+            privyWalletId: account.privyWalletId,
+            solanaWalletAddress: account.solanaWalletAddress,
+            createdAt: account.createdAt,
+          }
+        : null);
+    if (!managedWallet) {
       return {
         error: "Wallet actions require an FTX/FrogX-managed Privy wallet",
         status: 409,
       };
     }
 
-    const requestedWallet = stringValue(body.userPublicKey);
-    if (requestedWallet && requestedWallet !== account.solanaWalletAddress) {
+    if (
+      requestedWalletAddress &&
+      requestedWalletAddress !== managedWallet.solanaWalletAddress
+    ) {
       return { error: "Trading wallet mismatch", status: 409 };
     }
 
     const now = new Date().toISOString();
     const claimUrl = stringValue(body.claimUrl) ?? null;
-    let status: "claim_requested" | "export_requested" | "revoked" | "restored";
+    let status:
+      | "claim_requested"
+      | "export_requested"
+      | "revoked"
+      | "restored"
+      | "signer_check_requested";
     let eventType: string;
     let warnings: string[];
 
@@ -9404,21 +11354,29 @@ export class TradingBotAccountStore {
       warnings = [
         "FTX bot access is revoked for this account. Ribbot live actions will be refused until the user restores the Privy app signer and FTX access through an authenticated control session.",
       ];
-    } else {
+    } else if (action === "restore") {
       delete account.botAccessRevokedAt;
       status = "restored";
       eventType = "bot_access_restored";
       warnings = [
         "FTX bot access is restored. Live actions still require the Privy app signer, wallet policy, and every FTX execution gate.",
       ];
+    } else {
+      return {
+        status: "signer_check_requested",
+        action,
+        account,
+        updatedAt: account.updatedAt,
+        warnings: [],
+      };
     }
 
     account.updatedAt = now;
     this.saveAccount(account);
     this.recordAccountEvent(account.telegramUserId, eventType, {
-      walletAddress: account.solanaWalletAddress,
-      privyUserId: account.privyUserId,
-      privyWalletId: account.privyWalletId,
+      walletAddress: managedWallet.solanaWalletAddress,
+      privyUserId: managedWallet.privyUserId,
+      privyWalletId: managedWallet.privyWalletId,
       claimUrl,
       updatedAt: now,
     });
@@ -9891,6 +11849,7 @@ async function createSolanaWallet(
   config: PrivyConfig,
   privyUserId: string,
   telegramUserId: string,
+  walletIndex: number,
 ): Promise<PrivyWallet> {
   const additionalSigners = config.authorizationKeyId
     ? [
@@ -9904,12 +11863,15 @@ async function createSolanaWallet(
   const response = await privyRequest(config, "/wallets", {
     method: "POST",
     headers: {
-      "privy-idempotency-key": `ribbot-tg-${telegramUserId}-solana-wallet`,
+      "privy-idempotency-key": `ribbot-tg-${telegramUserId}-solana-wallet-${walletIndex + 1}`,
     },
     body: JSON.stringify({
       chain_type: "solana",
-      display_name: `Ribbot ${telegramUserId}`,
-      external_id: `ribbot_tg_${telegramUserId}`,
+      display_name:
+        walletIndex === 0
+          ? `Ribbot ${telegramUserId} Spot/NFT`
+          : `Ribbot ${telegramUserId} Perps`,
+      external_id: `ribbot_tg_${telegramUserId}_${walletIndex + 1}`,
       owner: { user_id: privyUserId },
       ...(additionalSigners ? { additional_signers: additionalSigners } : {}),
     }),
@@ -9938,6 +11900,56 @@ function privyRequest(
     ...init,
     headers,
   });
+}
+
+async function getPrivyWallet(
+  config: PrivyConfig,
+  walletId: string,
+): Promise<PrivyWallet> {
+  const response = await privyRequest(
+    config,
+    `/wallets/${encodeURIComponent(walletId)}`,
+    { method: "GET" },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Privy wallet lookup failed with status ${response.status}`,
+    );
+  }
+  return (await response.json()) as PrivyWallet;
+}
+
+function automationSignerDescriptor(config: PrivyConfig): {
+  signerId: string;
+  policyIds: string[];
+} | null {
+  return signerConfigured(config) && config.authorizationKeyId
+    ? {
+        signerId: config.authorizationKeyId,
+        policyIds: config.walletPolicyIds,
+      }
+    : null;
+}
+
+function hasConfiguredAutomationSigner(
+  wallet: PrivyWallet,
+  config: PrivyConfig,
+): boolean {
+  const signerId = config.authorizationKeyId;
+  if (!signerId) return false;
+  const expectedPolicyIds = [...config.walletPolicyIds].sort();
+  return Boolean(
+    wallet.additional_signers?.some((signer) => {
+      if (signer.signer_id !== signerId) return false;
+      const actualPolicyIds = [...(signer.override_policy_ids ?? [])].sort();
+      return (
+        actualPolicyIds.length === expectedPolicyIds.length &&
+        actualPolicyIds.every(
+          (policyId, index) => policyId === expectedPolicyIds[index],
+        )
+      );
+    }),
+  );
 }
 
 async function getPrivyTransactionByReferenceId(
@@ -10316,9 +12328,13 @@ async function reconcileTradingBotManualReviewCase(
       env,
       reviewCase.telegramUserId,
     );
+    const spotWallet =
+      "error" in accountResult || !accountResult.account
+        ? null
+        : spotNftPrivyWallet(accountResult.account);
     if (
       "error" in accountResult ||
-      !accountResult.account?.solanaWalletAddress
+      !spotWallet
     ) {
       return {
         checkedAt,
@@ -10334,7 +12350,7 @@ async function reconcileTradingBotManualReviewCase(
       executionId: reviewCase.executionId,
       referenceSubject: reviewCase.executionId,
       telegramUserId: reviewCase.telegramUserId,
-      userPublicKey: accountResult.account.solanaWalletAddress,
+      userPublicKey: spotWallet.solanaWalletAddress,
       successEventType:
         reviewCase.executionKind === "swap"
           ? "swap_executed"
@@ -10680,21 +12696,17 @@ async function getTradingBotDirectExecutionStatus(
     );
   }
   const account = accountResult.account;
-  if (
-    !account ||
-    account.walletSource !== "privy" ||
-    !account.privyWalletId ||
-    !account.solanaWalletAddress
-  ) {
+  const spotWallet = account ? spotNftPrivyWallet(account) : null;
+  if (!spotWallet?.privyWalletId) {
     return json(
       {
         status: "not_executable",
-        error: "Execution status requires an FTX/FrogX-managed Privy wallet",
+        error: "Execution status requires Spot & NFT Wallet (Privy)",
       },
       { status: 409 },
     );
   }
-  if (account.solanaWalletAddress !== input.userPublicKey) {
+  if (spotWallet.solanaWalletAddress !== input.userPublicKey) {
     return json(
       { status: "mismatch", error: "Trading wallet mismatch" },
       { status: 409 },
@@ -10781,7 +12793,7 @@ async function getTradingBotDirectExecutionStatus(
   }
 
   if (
-    transaction.wallet_id !== account.privyWalletId ||
+    transaction.wallet_id !== spotWallet.privyWalletId ||
     transaction.caip2 !== SOLANA_MAINNET_CAIP2
   ) {
     const manualReview = withTradingBotManualReview(
@@ -11010,7 +13022,7 @@ export async function getManagedPrivyWallet(
   walletAddress: string,
 ): Promise<
   | { wallet: ManagedPrivyWallet }
-  | { error: string; status: number }
+  | { error: string; status: number; code?: string }
 > {
   const accountResult = await getStoredTradingBotAccount(env, telegramUserId);
   if ("error" in accountResult) {
@@ -11027,7 +13039,9 @@ export async function getManagedPrivyWallet(
     return { error: "FTX bot access has been revoked", status: 409 };
   }
   const wallet = account.wallets.find(
-    (entry) => entry.solanaWalletAddress === walletAddress,
+    (entry) =>
+      entry.role === "spot_nft" &&
+      entry.solanaWalletAddress === walletAddress,
   );
   if (
     !wallet ||
@@ -11035,8 +13049,43 @@ export async function getManagedPrivyWallet(
     !wallet.privyWalletId
   ) {
     return {
-      error: "Wallet is not an FTX/FrogX-managed Privy wallet",
+      error: "Spot and NFT trading requires Spot & NFT Wallet (Privy)",
       status: 409,
+    };
+  }
+
+  const config = resolvePrivyConfig(env);
+  if (!config || !signerConfigured(config)) {
+    return {
+      error: "Ribbot automation signer is not configured",
+      status: 503,
+    };
+  }
+
+  let privyWallet: PrivyWallet;
+  try {
+    privyWallet = await getPrivyWallet(config, wallet.privyWalletId);
+  } catch {
+    return {
+      error: "Privy wallet verification is temporarily unavailable",
+      status: 503,
+    };
+  }
+  if (
+    privyWallet.id !== wallet.privyWalletId ||
+    privyWallet.address !== wallet.solanaWalletAddress ||
+    privyWallet.chain_type !== "solana"
+  ) {
+    return {
+      error: "Stored Spot & NFT wallet does not match Privy",
+      status: 409,
+    };
+  }
+  if (!hasConfiguredAutomationSigner(privyWallet, config)) {
+    return {
+      error: "Ribbot access is not enabled for Spot & NFT Wallet (Privy)",
+      status: 409,
+      code: "RIBBOT_ACCESS_REQUIRED",
     };
   }
   return {
@@ -11145,8 +13194,12 @@ async function privySignAndSendSolanaTransaction(
       headers: signedHeaders,
       body,
     });
-  } catch {
-    throw new PrivyWalletRpcError(0, "authorization");
+  } catch (error) {
+    throw new PrivyWalletRpcError(
+      0,
+      "authorization",
+      readPrivyAuthorizationErrorCode(error),
+    );
   }
 
   const headers = new Headers({
@@ -11169,10 +13222,71 @@ async function privySignAndSendSolanaTransaction(
     throw new PrivyWalletRpcError(0, "transport");
   }
   if (!response.ok) {
-    throw new PrivyWalletRpcError(response.status);
+    throw new PrivyWalletRpcError(
+      response.status,
+      "http",
+      await readPrivyErrorCode(response),
+    );
   }
 
   return (await response.json()) as PrivySolanaSignAndSendResponse;
+}
+
+async function readPrivyErrorCode(response: Response): Promise<string | null> {
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    return null;
+  }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+  const record = payload as Record<string, unknown>;
+  const nestedError =
+    record.error &&
+    typeof record.error === "object" &&
+    !Array.isArray(record.error)
+      ? (record.error as Record<string, unknown>)
+      : null;
+  const candidates = [
+    nestedError?.code,
+    nestedError?.error_code,
+    nestedError?.type,
+    record.code,
+    record.error_code,
+    typeof record.error === "string" ? record.error : null,
+  ];
+  for (const candidate of candidates) {
+    if (
+      typeof candidate === "string" &&
+      /^[a-z][a-z0-9_-]{0,127}$/i.test(candidate)
+    ) {
+      return candidate.toLowerCase();
+    }
+  }
+  return null;
+}
+
+function readPrivyAuthorizationErrorCode(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return "authorization_signature_generation_failed";
+  }
+  if (error.message === "Invalid wallet authorization private key") {
+    return "invalid_authorization_private_key";
+  }
+  if (
+    error.message === "Failed to serialize request for authorization signature"
+  ) {
+    return "authorization_serialization_failed";
+  }
+  if (
+    error instanceof ReferenceError &&
+    /\bBuffer\b.*\bnot defined\b/i.test(error.message)
+  ) {
+    return "authorization_runtime_incompatible";
+  }
+  return "authorization_signature_generation_failed";
 }
 
 async function buildTradingBotWithdrawalTransaction(
@@ -11350,7 +13464,11 @@ async function generatePrivyAuthorizationSignature(
   request: {
     url: string;
     method: "POST" | "PUT" | "PATCH" | "DELETE";
-    headers: Record<string, string>;
+    headers: {
+      "privy-app-id": string;
+      "privy-idempotency-key"?: string;
+      "privy-request-expiry"?: string;
+    };
     body: unknown;
   },
 ): Promise<string> {
@@ -13070,6 +15188,448 @@ async function getStoredTradingBotEvent(
   }
 }
 
+async function reconcileTradingBotPerpsDeposit(
+  env: Env,
+  telegramUserId: string,
+): Promise<void> {
+  const accountResult = await getStoredTradingBotAccount(env, telegramUserId);
+  if ("error" in accountResult || !accountResult.account) return;
+
+  const wallet = tradingBotAccountWalletByRole(
+    accountResult.account,
+    "spot_nft",
+  );
+  if (!wallet) return;
+
+  const previewResult = await getStoredTradingBotDeltaNeutralPreview(
+    env,
+    telegramUserId,
+    wallet.solanaWalletAddress,
+  );
+  if ("error" in previewResult) return;
+  const { preview } = previewResult;
+  if (!preview.profileAddress || !preview.profileFunded) return;
+
+  const eventId = `imperial-profile-funded:${preview.profileAddress}`;
+  if (await getStoredTradingBotEvent(env, telegramUserId, eventId)) return;
+
+  await recordTradingBotAccountEvent(env, telegramUserId, {
+    eventId,
+    eventType: "imperial_deposit_confirmed",
+    metadata: {
+      authorityWalletAddress: wallet.solanaWalletAddress,
+      profileAddress: preview.profileAddress,
+      profileIndex: preview.profileIndex,
+      uiAmountString: String(preview.profileUsdc),
+      minimumUiAmountString: String(preview.minimumProfileUsdc),
+      fundingLocation: "imperial_profile",
+    },
+  });
+}
+
+async function getStoredTradingBotDeltaNeutralPreview(
+  env: Env,
+  telegramUserId: string,
+  expectedWalletAddress: string,
+): Promise<
+  | {
+      preview: DeltaNeutralServicePreview;
+      liveExecutionEnabled: boolean;
+    }
+  | { error: string; status: number }
+> {
+  const store = tradingBotAccountStore(env, telegramUserId);
+  if (!store) {
+    return { error: "Trading account storage is not configured", status: 503 };
+  }
+
+  const response = await store.fetch(
+    new Request("https://trading-bot-account.local/delta-neutral/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ telegramUserId }),
+    }),
+  );
+  const data = (await response.json().catch(() => null)) as unknown;
+  const record = recordValue(data);
+  if (!response.ok) {
+    return {
+      error:
+        stringValue(record?.error) ?? "Imperial profile is temporarily unavailable",
+      status: response.status,
+    };
+  }
+  const preview = deltaNeutralPreviewValue(
+    record?.preview,
+    expectedWalletAddress,
+  );
+  if (!preview) {
+    return { error: "Imperial returned an invalid profile", status: 502 };
+  }
+  return {
+    preview,
+    liveExecutionEnabled: record?.liveExecutionEnabled === true,
+  };
+}
+
+async function forwardTradingBotDeltaNeutralRequest(
+  request: Request,
+  env: Env,
+  action: "preview" | "start" | "status" | "stop",
+  requireLiveConfirmation: boolean,
+): Promise<Response> {
+  const auth = authorizeTradingBotRequest(request, env);
+  if (auth === "missing") {
+    return json(
+      { status: "not_configured", required: ["RIBBOT_TRADING_BOT_TOKEN"] },
+      { status: 503 },
+    );
+  }
+  if (auth === "denied") {
+    return json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = requireLiveConfirmation
+    ? await parseDeltaNeutralRequestBody(request, true)
+    : await parseDeltaNeutralRequestBody(request);
+  if ("error" in body) {
+    return json({ error: body.error }, { status: 400 });
+  }
+
+  const store = tradingBotAccountStore(env, body.telegramUserId);
+  if (!store) {
+    return json(
+      { status: "not_configured", required: ["TRADING_BOT_ACCOUNTS"] },
+      { status: 503 },
+    );
+  }
+
+  return store.fetch(
+    new Request(`https://trading-bot-account.local/delta-neutral/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+async function parseDeltaNeutralRequestBody(
+  request: Request,
+  requireLiveConfirmation: true,
+): Promise<
+  | {
+      telegramUserId: string;
+      idempotencyKey: string;
+      confirmLive: true;
+    }
+  | { error: string }
+>;
+async function parseDeltaNeutralRequestBody(
+  request: Request,
+  requireLiveConfirmation?: false,
+): Promise<{ telegramUserId: string } | { error: string }>;
+async function parseDeltaNeutralRequestBody(
+  request: Request,
+  requireLiveConfirmation = false,
+): Promise<
+  | { telegramUserId: string }
+  | {
+      telegramUserId: string;
+      idempotencyKey: string;
+      confirmLive: true;
+    }
+  | { error: string }
+> {
+  let raw: TradingBotDeltaNeutralBody;
+  try {
+    raw = (await request.json()) as TradingBotDeltaNeutralBody;
+  } catch {
+    return { error: "Invalid JSON" };
+  }
+
+  const telegramUserId = stringValue(raw.telegramUserId);
+  if (!telegramUserId || !TELEGRAM_USER_ID_PATTERN.test(telegramUserId)) {
+    return { error: "telegramUserId is required" };
+  }
+  if (!requireLiveConfirmation) return { telegramUserId };
+
+  const idempotencyKey = stringValue(raw.idempotencyKey);
+  if (
+    !idempotencyKey ||
+    !DELTA_NEUTRAL_IDEMPOTENCY_KEY_PATTERN.test(idempotencyKey)
+  ) {
+    return { error: "idempotencyKey is invalid" };
+  }
+  if (raw.confirmLive !== true) {
+    return { error: "confirmLive must be true" };
+  }
+  return { telegramUserId, idempotencyKey, confirmLive: true };
+}
+
+function isDeltaNeutralEnabled(env: Env): boolean {
+  return booleanValue(env.PERP_FARMER_ENABLED) === true;
+}
+
+function isDeltaNeutralLiveExecutionEnabled(env: Env): boolean {
+  return (
+    isDeltaNeutralEnabled(env) &&
+    booleanValue(env.PERP_FARMER_LIVE_EXECUTION_ENABLED) === true
+  );
+}
+
+function resolveDeltaNeutralService(
+  env: Env,
+): { url: string; token: string } | null {
+  const rawUrl = stringValue(env.PERP_FARMER_SERVICE_URL);
+  const token = stringValue(env.PERP_FARMER_SERVICE_TOKEN);
+  if (!rawUrl || !token) return null;
+
+  try {
+    const url = new URL(rawUrl);
+    const localHttp =
+      url.protocol === "http:" &&
+      (url.hostname === "127.0.0.1" || url.hostname === "localhost");
+    if (url.protocol !== "https:" && !localHttp) return null;
+    if (url.username || url.password || url.search || url.hash) return null;
+    return { url: url.toString().replace(/\/$/, ""), token };
+  } catch {
+    return null;
+  }
+}
+
+function deltaNeutralServiceMissingRequirements(
+  env: Env,
+  requireLive: boolean,
+): string[] {
+  const missing: string[] = [];
+  if (!isDeltaNeutralEnabled(env)) missing.push("PERP_FARMER_ENABLED");
+  if (!stringValue(env.PERP_FARMER_SERVICE_URL)) {
+    missing.push("PERP_FARMER_SERVICE_URL");
+  }
+  if (!stringValue(env.PERP_FARMER_SERVICE_TOKEN)) {
+    missing.push("PERP_FARMER_SERVICE_TOKEN");
+  }
+  if (!resolveDeltaNeutralService(env)) {
+    missing.push("PERP_FARMER_SERVICE_CONFIGURATION");
+  }
+  if (requireLive && !isDeltaNeutralLiveExecutionEnabled(env)) {
+    missing.push("PERP_FARMER_LIVE_EXECUTION_ENABLED");
+  }
+  return uniqueStrings(missing);
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function deltaNeutralProxyStatus(status: number): number {
+  return [400, 409, 429].includes(status) ? status : 502;
+}
+
+function finiteNonNegativeNumber(value: unknown): number | null {
+  const parsed = numberValue(value);
+  return parsed !== undefined && Number.isFinite(parsed) && parsed >= 0
+    ? parsed
+    : null;
+}
+
+export function deltaNeutralPreviewValue(
+  value: unknown,
+  expectedWallet: string,
+): DeltaNeutralServicePreview | null {
+  const record = recordValue(value);
+  const profileUsdc = finiteNonNegativeNumber(record?.profileUsdc);
+  const minimumProfileUsdc = finiteNonNegativeNumber(
+    record?.minimumProfileUsdc,
+  );
+  const liveEntryCapUsd = finiteNonNegativeNumber(record?.liveEntryCapUsd);
+  const maxCycles = nonNegativeSafeInteger(record?.maxCycles);
+  const blockers = record?.blockers;
+  const profileAddress = record?.profileAddress;
+  if (
+    record?.strategy !== DELTA_NEUTRAL_STRATEGY ||
+    record?.preset !== DELTA_NEUTRAL_PRESET ||
+    record?.wallet !== expectedWallet ||
+    record?.profileIndex !== DELTA_NEUTRAL_PROFILE_INDEX ||
+    profileUsdc === null ||
+    minimumProfileUsdc !== 50 ||
+    typeof record?.profileFunded !== "boolean" ||
+    typeof record?.liveReady !== "boolean" ||
+    liveEntryCapUsd === null ||
+    maxCycles !== DELTA_NEUTRAL_MAX_CYCLES ||
+    !Array.isArray(blockers) ||
+    !blockers.every((blocker) => typeof blocker === "string") ||
+    !(
+      profileAddress === null ||
+      profileAddress === undefined ||
+      typeof profileAddress === "string"
+    )
+  ) {
+    return null;
+  }
+  const entryCapCompatible =
+    liveEntryCapUsd === DELTA_NEUTRAL_LIVE_ENTRY_CAP_USD;
+  const normalizedBlockers = blockers as string[];
+  return {
+    strategy: DELTA_NEUTRAL_STRATEGY,
+    preset: DELTA_NEUTRAL_PRESET,
+    wallet: expectedWallet,
+    profileIndex: DELTA_NEUTRAL_PROFILE_INDEX,
+    profileAddress: typeof profileAddress === "string" ? profileAddress : null,
+    profileUsdc,
+    minimumProfileUsdc,
+    profileFunded: record.profileFunded,
+    liveReady: record.liveReady && entryCapCompatible,
+    liveEntryCapUsd: DELTA_NEUTRAL_LIVE_ENTRY_CAP_USD,
+    serviceLiveEntryCapUsd: liveEntryCapUsd,
+    entryCapCompatible,
+    maxCycles,
+    blockers: entryCapCompatible
+      ? normalizedBlockers
+      : uniqueStrings([
+          ...normalizedBlockers,
+          deltaNeutralEntryCapBlocker(liveEntryCapUsd),
+        ]),
+  };
+}
+
+function deltaNeutralEntryCapBlocker(serviceLiveEntryCapUsd: number): string {
+  return `Delta Neutral requires a $${serviceLiveEntryCapUsd} live entry cap, above the $${DELTA_NEUTRAL_LIVE_ENTRY_CAP_USD} Frog Trading Exchange beta limit.`;
+}
+
+function deltaNeutralRunStatusValue(
+  value: unknown,
+  expectedWallet: string,
+): DeltaNeutralServiceRunStatus | null {
+  const record = recordValue(value);
+  const completedCycles = nonNegativeSafeInteger(record?.completedCycles);
+  const maxCycles = nonNegativeSafeInteger(record?.maxCycles);
+  const dailyBudgetUsd = finiteNonNegativeNumber(record?.dailyBudgetUsd);
+  const estimatedRunCostUsd = finiteNonNegativeNumber(
+    record?.estimatedRunCostUsd,
+  );
+  const completedVolumeUsd = finiteNonNegativeNumber(
+    record?.completedVolumeUsd,
+  );
+  const runId = record?.runId;
+  const startedAtUnix = record?.startedAtUnix;
+  const stoppedAtUnix = record?.stoppedAtUnix;
+  const lastMessage = record?.lastMessage;
+  if (
+    record?.strategy !== DELTA_NEUTRAL_STRATEGY ||
+    record?.preset !== DELTA_NEUTRAL_PRESET ||
+    record?.wallet !== expectedWallet ||
+    !(
+      runId === null ||
+      (typeof runId === "string" && runId.startsWith("ribbot-"))
+    ) ||
+    typeof record?.launching !== "boolean" ||
+    typeof record?.running !== "boolean" ||
+    typeof record?.stopRequested !== "boolean" ||
+    completedCycles === null ||
+    maxCycles !== DELTA_NEUTRAL_MAX_CYCLES ||
+    dailyBudgetUsd !== DELTA_NEUTRAL_DAILY_BUDGET_USD ||
+    estimatedRunCostUsd === null ||
+    completedVolumeUsd === null ||
+    !(
+      startedAtUnix === null ||
+      (typeof startedAtUnix === "number" && Number.isSafeInteger(startedAtUnix))
+    ) ||
+    !(
+      stoppedAtUnix === null ||
+      (typeof stoppedAtUnix === "number" && Number.isSafeInteger(stoppedAtUnix))
+    ) ||
+    !(lastMessage === null || typeof lastMessage === "string") ||
+    typeof record?.failed !== "boolean"
+  ) {
+    return null;
+  }
+  return {
+    strategy: DELTA_NEUTRAL_STRATEGY,
+    preset: DELTA_NEUTRAL_PRESET,
+    wallet: expectedWallet,
+    runId: runId as string | null,
+    launching: record.launching,
+    running: record.running,
+    stopRequested: record.stopRequested,
+    completedCycles,
+    maxCycles,
+    dailyBudgetUsd,
+    estimatedRunCostUsd,
+    completedVolumeUsd,
+    startedAtUnix: startedAtUnix as number | null,
+    stoppedAtUnix: stoppedAtUnix as number | null,
+    lastMessage: lastMessage as string | null,
+    failed: record.failed,
+  };
+}
+
+function deltaNeutralServiceStatusValue(
+  value: unknown,
+  expectedWallet: string,
+): {
+  configured: boolean;
+  enabled: boolean;
+  liveEnabled: boolean;
+  run: DeltaNeutralServiceRunStatus | null;
+} | null {
+  const record = recordValue(value);
+  if (
+    typeof record?.configured !== "boolean" ||
+    typeof record?.enabled !== "boolean" ||
+    typeof record?.liveEnabled !== "boolean" ||
+    record?.strategy !== DELTA_NEUTRAL_STRATEGY ||
+    record?.preset !== DELTA_NEUTRAL_PRESET
+  ) {
+    return null;
+  }
+  const run =
+    record.run === null
+      ? null
+      : deltaNeutralRunStatusValue(record.run, expectedWallet);
+  if (record.run !== null && !run) return null;
+  return {
+    configured: record.configured,
+    enabled: record.enabled,
+    liveEnabled: record.liveEnabled,
+    run,
+  };
+}
+
+function deltaNeutralRunState(run: DeltaNeutralServiceRunStatus): string {
+  if (run.failed) return "failed";
+  if (run.launching) return "launching";
+  if (run.running) return run.stopRequested ? "stopping" : "running";
+  if (run.completedCycles >= run.maxCycles) return "completed";
+  if (run.stoppedAtUnix !== null || run.stopRequested) return "stopped";
+  return "idle";
+}
+
+function deltaNeutralStoredRunValue(
+  row: TradingBotDeltaNeutralRunRow,
+): DeltaNeutralServiceRunStatus | Record<string, unknown> {
+  try {
+    const parsed = deltaNeutralRunStatusValue(
+      JSON.parse(row.service_status_json),
+      row.wallet_address,
+    );
+    if (parsed) return parsed;
+  } catch {
+    // Return the durable FTX metadata when service state is not yet available.
+  }
+  return {
+    runId: row.run_id,
+    wallet: row.wallet_address,
+    strategy: DELTA_NEUTRAL_STRATEGY,
+    preset: DELTA_NEUTRAL_PRESET,
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 function tradingBotAccountStore(
   env: Env,
   telegramUserId: string,
@@ -13944,10 +16504,14 @@ async function executeTradingBotCopyTradeConfig(
   }
   const account = accountResult.account;
   if (!account) return { ok: false, error: "Trading account not found" };
-  if (
-    account.solanaWalletAddress &&
-    account.solanaWalletAddress !== config.walletAddress
-  ) {
+  const spotWallet = spotNftPrivyWallet(account);
+  if (!spotWallet) {
+    return {
+      ok: false,
+      error: "Copytrade execution requires Spot & NFT Wallet (Privy)",
+    };
+  }
+  if (spotWallet.solanaWalletAddress !== config.walletAddress) {
     return { ok: false, error: "Trading wallet mismatch" };
   }
 
@@ -14191,16 +16755,13 @@ async function executeTradingBotBundleBuyConfig(
   }
   const account = accountResult.account;
   if (!account) return bundleBuyExecutionFailure("Trading account not found");
-  if (
-    account.walletSource !== "privy" ||
-    !account.privyWalletId ||
-    !account.solanaWalletAddress
-  ) {
+  const spotWallet = spotNftPrivyWallet(account);
+  if (!spotWallet?.privyWalletId) {
     return bundleBuyExecutionFailure(
-      "Bundle-buy execution requires an FTX/FrogX-managed Privy wallet",
+      "Bundle-buy execution requires Spot & NFT Wallet (Privy)",
     );
   }
-  if (account.solanaWalletAddress !== config.walletAddress) {
+  if (spotWallet.solanaWalletAddress !== config.walletAddress) {
     return bundleBuyExecutionFailure("Trading wallet mismatch");
   }
   if (account.botAccessRevokedAt) {
@@ -14401,7 +16962,14 @@ async function executeTradingBotSniperConfig(
   if (!account.settings.sniperEnabled) {
     return { ok: false, error: "Account sniper setting is disabled" };
   }
-  if (account.solanaWalletAddress !== config.walletAddress) {
+  const spotWallet = spotNftPrivyWallet(account);
+  if (!spotWallet) {
+    return {
+      ok: false,
+      error: "Sniper execution requires Spot & NFT Wallet (Privy)",
+    };
+  }
+  if (spotWallet.solanaWalletAddress !== config.walletAddress) {
     return { ok: false, error: "Trading wallet mismatch" };
   }
 
@@ -14547,10 +17115,14 @@ async function executeTradingBotAutoBuyConfig(
   if (!account.settings.autoBuyEnabled) {
     return { ok: false, error: "Account auto-buy setting is disabled" };
   }
-  if (
-    account.solanaWalletAddress &&
-    account.solanaWalletAddress !== config.walletAddress
-  ) {
+  const spotWallet = spotNftPrivyWallet(account);
+  if (!spotWallet) {
+    return {
+      ok: false,
+      error: "Auto-buy execution requires Spot & NFT Wallet (Privy)",
+    };
+  }
+  if (spotWallet.solanaWalletAddress !== config.walletAddress) {
     return { ok: false, error: "Trading wallet mismatch" };
   }
 
@@ -14691,10 +17263,14 @@ async function executeTradingBotAutoSellConfig(
   if (!account.settings.autoSellEnabled) {
     return { ok: false, error: "Account auto-sell setting is disabled" };
   }
-  if (
-    account.solanaWalletAddress &&
-    account.solanaWalletAddress !== config.walletAddress
-  ) {
+  const spotWallet = spotNftPrivyWallet(account);
+  if (!spotWallet) {
+    return {
+      ok: false,
+      error: "Auto-sell execution requires Spot & NFT Wallet (Privy)",
+    };
+  }
+  if (spotWallet.solanaWalletAddress !== config.walletAddress) {
     return { ok: false, error: "Trading wallet mismatch" };
   }
 
@@ -15837,12 +18413,14 @@ function rowToTradingBotAccount(
     walletSource &&
     row.solana_wallet_address
   ) {
+    const role = walletSource === "privy" ? "spot_nft" : "portfolio";
     wallets.push({
       walletId:
         walletSource === "privy" && row.privy_wallet_id
           ? row.privy_wallet_id
           : `external:${row.solana_wallet_address}`,
-      label: "Wallet 1",
+      label: tradingBotWalletLabel(role),
+      role,
       walletSource,
       ...(row.privy_user_id ? { privyUserId: row.privy_user_id } : {}),
       ...(row.privy_wallet_id ? { privyWalletId: row.privy_wallet_id } : {}),
@@ -15919,8 +18497,18 @@ export function selectTradingBotAccountWallet(
   | { error: string } {
   const wallet = account.wallets.find((entry) => entry.walletId === walletId);
   if (!wallet) return { error: "Wallet is not linked to this account" };
+  if (wallet.role === "portfolio") {
+    return { error: "Read-only portfolio wallets cannot be used for trading" };
+  }
   activateTradingBotAccountWallet(account, wallet);
   return { account, wallet };
+}
+
+function tradingBotAccountWalletByRole(
+  account: TradingBotAccountSnapshot,
+  role: TradingBotWalletRole,
+): TradingBotAccountWalletSlot | undefined {
+  return account.wallets.find((wallet) => wallet.role === role);
 }
 
 function tradingBotAccountWalletSlotsValue(
@@ -15931,6 +18519,7 @@ function tradingBotAccountWalletSlotsValue(
   const slots: TradingBotAccountWalletSlot[] = [];
   const walletIds = new Set<string>();
   const addresses = new Set<string>();
+  let managedWalletIndex = 0;
   for (const entry of value) {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
     const record = entry as Record<string, unknown>;
@@ -15950,11 +18539,16 @@ function tradingBotAccountWalletSlotsValue(
     ) {
       continue;
     }
+    if (walletSource === "privy" && managedWalletIndex > 0) continue;
     const createdAt = optionalIsoTimestamp(record.createdAt) ?? fallbackCreatedAt;
+    const role =
+      walletSource === "external"
+        ? "portfolio"
+        : "spot_nft";
     slots.push({
       walletId,
-      label:
-        stringValue(record.label)?.slice(0, 32) ?? `Wallet ${slots.length + 1}`,
+      label: tradingBotWalletLabel(role),
+      role,
       walletSource,
       ...(privyUserId ? { privyUserId } : {}),
       ...(privyWalletId ? { privyWalletId } : {}),
@@ -15963,6 +18557,7 @@ function tradingBotAccountWalletSlotsValue(
     });
     walletIds.add(walletId);
     addresses.add(solanaWalletAddress);
+    if (walletSource === "privy") managedWalletIndex += 1;
     if (slots.length >= 10) break;
   }
   return slots;
@@ -16467,6 +19062,24 @@ function walletSourceValue(value: unknown): "privy" | "external" | undefined {
     : undefined;
 }
 
+function tradingBotWalletRoleValue(
+  value: unknown,
+): TradingBotWalletRole | undefined {
+  const normalized = stringValue(value);
+  if (
+    normalized === "spot_nft" ||
+    normalized === "portfolio"
+  ) {
+    return normalized;
+  }
+  return undefined;
+}
+
+function tradingBotWalletLabel(role: TradingBotWalletRole): string {
+  if (role === "spot_nft") return SPOT_NFT_WALLET_LABEL;
+  return PORTFOLIO_WALLET_LABEL;
+}
+
 function controlWalletActionValue(
   value: unknown,
 ): TradingBotControlWalletAction | undefined {
@@ -16475,7 +19088,8 @@ function controlWalletActionValue(
     normalized === "claim" ||
     normalized === "export" ||
     normalized === "revoke" ||
-    normalized === "restore"
+    normalized === "restore" ||
+    normalized === "verify_signer"
   ) {
     return normalized;
   }
@@ -18534,8 +21148,9 @@ function authorizeTradingBotOperatorRequest(
 }
 
 function findSolanaWallets(user: PrivyUser): PrivyLinkedAccount[] {
-  return (user.linked_accounts ?? []).filter(
-    (account) => {
+  return (user.linked_accounts ?? [])
+    .map((account, sourceIndex) => ({ account, sourceIndex }))
+    .filter(({ account }) => {
       const walletClientType =
         account.wallet_client_type ??
         account.walletClientType ??
@@ -18543,16 +21158,56 @@ function findSolanaWallets(user: PrivyUser): PrivyLinkedAccount[] {
       return (
         account.type === "wallet" &&
         account.chain_type === "solana" &&
-        walletClientType === "privy" &&
+        (walletClientType === "privy" || walletClientType === "privy-v2") &&
         Boolean(account.id) &&
         Boolean(account.address)
       );
-    },
-  );
+    })
+    .sort((left, right) => {
+      const leftIndex =
+        left.account.wallet_index ?? left.account.walletIndex ?? null;
+      const rightIndex =
+        right.account.wallet_index ?? right.account.walletIndex ?? null;
+      if (leftIndex === null && rightIndex === null) {
+        return left.sourceIndex - right.sourceIndex;
+      }
+      if (leftIndex === null) return 1;
+      if (rightIndex === null) return -1;
+      return leftIndex - rightIndex || left.sourceIndex - right.sourceIndex;
+    })
+    .map(({ account }) => account);
 }
 
 function signerConfigured(config: PrivyConfig): boolean {
   return Boolean(config.authorizationKeyId && config.authorizationPrivateKey);
+}
+
+function spotNftPrivyWallet(
+  account: TradingBotAccountSnapshot,
+): TradingBotAccountWalletSlot | null {
+  const wallet = account.wallets.find(
+    (entry) =>
+      entry.role === "spot_nft" && entry.walletSource === "privy",
+  );
+  if (wallet) return wallet;
+  if (
+    account.wallets.length === 0 &&
+    account.walletSource === "privy" &&
+    account.privyWalletId &&
+    account.solanaWalletAddress
+  ) {
+    return {
+      walletId: account.privyWalletId,
+      label: SPOT_NFT_WALLET_LABEL,
+      role: "spot_nft",
+      walletSource: "privy",
+      privyUserId: account.privyUserId,
+      privyWalletId: account.privyWalletId,
+      solanaWalletAddress: account.solanaWalletAddress,
+      createdAt: account.createdAt,
+    };
+  }
+  return null;
 }
 
 function encodeBasicAuth(config: PrivyConfig): string {

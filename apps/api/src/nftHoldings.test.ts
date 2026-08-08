@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Env } from "./env";
-import { fetchWalletNftHoldings, getNftHoldings } from "./nftHoldings";
+import {
+  fetchWalletNftHoldings,
+  getNftHoldings,
+  walletOwnsCollectionAsset,
+} from "./nftHoldings";
 import { getTradingBotNfts } from "./tradingBot";
 
 const WALLET = "11111111111111111111111111111111";
@@ -71,6 +75,58 @@ describe("NFT holdings", () => {
       },
     ]);
     expect(result.walletAddresses).toEqual([WALLET]);
+  });
+
+  it("checks every holdings page when verifying a Frog for sale", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (_url, init) => {
+      const request = JSON.parse(String(init?.body)) as {
+        params: { page: number; limit: number };
+      };
+      return Response.json({
+        result: {
+          page: request.params.page,
+          limit: request.params.limit,
+          total: 51,
+          items:
+            request.params.page === 1
+              ? Array.from({ length: 50 }, (_, index) => ({
+                  id: `other-frog-${index}`,
+                  ownership: { owner: WALLET },
+                  grouping: [
+                    {
+                      group_key: "collection",
+                      group_value: "frog-collection",
+                    },
+                  ],
+                }))
+              : [
+                  {
+                    id: "target-frog",
+                    ownership: { owner: WALLET },
+                    grouping: [
+                      {
+                        group_key: "collection",
+                        group_value: "frog-collection",
+                      },
+                    ],
+                  },
+                ],
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      walletOwnsCollectionAsset(
+        { SOLANA_RPC_URL: "https://rpc.test" } as Env,
+        {
+          walletAddress: WALLET,
+          mint: "target-frog",
+          collectionAddress: "frog-collection",
+        },
+      ),
+    ).resolves.toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("rejects malformed public wallet lookups before RPC", async () => {

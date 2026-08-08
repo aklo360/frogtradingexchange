@@ -9,7 +9,7 @@ import bs58 from "bs58";
 import type { Env } from "./env";
 import {
   BUSINESS_FROG_COLLECTION,
-  fetchWalletNftHoldings,
+  walletOwnsCollectionAsset,
 } from "./nftHoldings";
 import {
   authorizeTradingBotRequest,
@@ -212,7 +212,7 @@ export const selectHighestLiveOffer = (
   };
 };
 
-const getTopOffer = async (
+export const fetchMagicEdenTopOffer = async (
   env: Env,
   now = new Date(),
 ): Promise<MagicEdenTopOffer> => {
@@ -307,6 +307,13 @@ const authenticateWallet = async (
     );
   }
 };
+
+const walletOwnsFrog = (env: Env, walletAddress: string, mint: string) =>
+  walletOwnsCollectionAsset(env, {
+    walletAddress,
+    mint,
+    collectionAddress: BUSINESS_FROG_COLLECTION,
+  });
 
 const base64ToBytes = (value: string) => {
   const binary = atob(value);
@@ -564,7 +571,7 @@ export const getMagicEdenTopOffer = async (
   env: Env,
 ): Promise<Response> => {
   try {
-    return json({ offer: await getTopOffer(env) });
+    return json({ offer: await fetchMagicEdenTopOffer(env) });
   } catch (error) {
     return handleError(error);
   }
@@ -595,13 +602,7 @@ export const postMagicEdenSellTransaction = async (
     }
 
     await authenticateWallet(request, env, walletAddress);
-    const holdings = await fetchWalletNftHoldings(env, {
-      walletAddress,
-      page: 1,
-      limit: 50,
-      collectionAddress: BUSINESS_FROG_COLLECTION,
-    });
-    if (!holdings.items.some((item) => item.mint === mint)) {
+    if (!(await walletOwnsFrog(env, walletAddress, mint))) {
       throw new SellRequestError(
         409,
         "FROG_NOT_OWNED",
@@ -609,7 +610,7 @@ export const postMagicEdenSellTransaction = async (
       );
     }
 
-    const offer = await getTopOffer(env);
+    const offer = await fetchMagicEdenTopOffer(env);
     const transaction = await requestSaleTransaction(env, {
       seller: walletAddress,
       mint,
@@ -659,17 +660,11 @@ export const postMagicEdenSellExecution = async (
     if ("error" in managedWallet) {
       throw new SellRequestError(
         managedWallet.status,
-        "MANAGED_WALLET_UNAVAILABLE",
+        managedWallet.code ?? "MANAGED_WALLET_UNAVAILABLE",
         managedWallet.error,
       );
     }
-    const holdings = await fetchWalletNftHoldings(env, {
-      walletAddress: input.walletAddress,
-      page: 1,
-      limit: 50,
-      collectionAddress: BUSINESS_FROG_COLLECTION,
-    });
-    if (!holdings.items.some((item) => item.mint === input.mint)) {
+    if (!(await walletOwnsFrog(env, input.walletAddress, input.mint))) {
       throw new SellRequestError(
         409,
         "FROG_NOT_OWNED",
@@ -677,7 +672,7 @@ export const postMagicEdenSellExecution = async (
       );
     }
 
-    const offer = await getTopOffer(env);
+    const offer = await fetchMagicEdenTopOffer(env);
     if (
       BigInt(offer.minimumPaymentLamports) <
       BigInt(input.minimumPaymentLamports)
@@ -793,7 +788,7 @@ export const postMagicEdenSellExecutionStatus = async (
     if ("error" in managedWallet) {
       throw new SellRequestError(
         managedWallet.status,
-        "MANAGED_WALLET_UNAVAILABLE",
+        managedWallet.code ?? "MANAGED_WALLET_UNAVAILABLE",
         managedWallet.error,
       );
     }
@@ -819,7 +814,7 @@ export const postMagicEdenSellExecutionStatus = async (
       throw new SellRequestError(
         409,
         "EXECUTION_MISMATCH",
-        "The Privy transaction does not match Wallet 2 on Solana",
+        "The Privy transaction does not match the managed Spot & NFT wallet on Solana",
       );
     }
     const terminalSuccess =
