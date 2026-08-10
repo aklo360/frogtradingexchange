@@ -314,6 +314,11 @@ describe("RibbotControlClient", () => {
     expect(screen.queryByRole("tab")).not.toBeInTheDocument();
     expect(screen.getByText("Step 1 of 2")).toBeInTheDocument();
     expect(
+      screen.getByRole("button", {
+        name: "Spot Trading Coming Soon",
+      }),
+    ).toBeDisabled();
+    expect(
       screen.queryByRole("button", { name: "Enable Ribbot" }),
     ).not.toBeInTheDocument();
     await waitFor(() => {
@@ -416,7 +421,7 @@ describe("RibbotControlClient", () => {
       name: "Ribbot is ready",
     });
     expect(dialog).toHaveTextContent(
-      "Your Frog Trading Exchange account is ready for Spot & NFT trading and Imperial perps. Privy holds the only private key.",
+      "Your Frog Trading Exchange account is ready for NFT trading and Imperial perps. Spot Trading is coming soon. Privy holds the only private key.",
     );
     expect(dialog).toHaveTextContent("Spot & NFT Wallet (Privy)");
     expect(dialog).toHaveTextContent(
@@ -424,7 +429,7 @@ describe("RibbotControlClient", () => {
     );
     expect(dialog).toHaveTextContent("Imperial Perps Wallet");
     expect(dialog).toHaveTextContent(
-      "Send SOL to the Spot & NFT Wallet for swaps and frogs. Send at least 50 USDC on Solana to the Imperial Perps Wallet for perps trading.",
+      "Send SOL to the Spot & NFT Wallet for Frog trades. Spot swaps are coming soon. Send at least 50 USDC on Solana to the Imperial Perps Wallet for perps trading.",
     );
     expect(dialog).toHaveTextContent(
       "Vote111111111111111111111111111111111111111",
@@ -452,7 +457,7 @@ describe("RibbotControlClient", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Send SOL to the Spot & NFT Wallet for swaps and frogs. Send at least 50 USDC on Solana to the Imperial Perps Wallet for perps trading.",
+        "Send SOL to the Spot & NFT Wallet for Frog trades. Spot swaps are coming soon. Send at least 50 USDC on Solana to the Imperial Perps Wallet for perps trading.",
       ),
     ).toBeInTheDocument();
     expect(

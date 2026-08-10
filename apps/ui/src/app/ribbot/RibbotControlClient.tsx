@@ -479,6 +479,16 @@ export function RibbotControlClient() {
           {progressLabel}
         </div>
 
+        <button
+          type="button"
+          className={styles.comingSoon}
+          disabled
+          aria-disabled="true"
+        >
+          <span>Spot Trading</span>
+          <strong>Coming Soon</strong>
+        </button>
+
         {!account ? (
           <form className={styles.step} onSubmit={exchangeCode}>
             <div className={styles.sectionHeading}>
@@ -582,7 +592,10 @@ export function RibbotControlClient() {
               <span>02</span>
               <div>
                 <h2 id="ribbot-setup-title">Enable Ribbot</h2>
-                <p>Set up Spot & NFT trading and Imperial perps.</p>
+                <p>
+                  Set up NFT trading and Imperial perps. Spot Trading is coming
+                  soon.
+                </p>
               </div>
             </div>
             <div className={styles.summaryList}>
@@ -650,8 +663,9 @@ export function RibbotControlClient() {
             </span>
             <h2 id="setup-complete-title">Ribbot is ready</h2>
             <p>
-              One Frog Trading Exchange account now handles Spot & NFT trading
-              and Imperial perps. Privy holds the only private key.
+              One Frog Trading Exchange account now handles NFT trading and
+              Imperial perps. Spot Trading is coming soon. Privy holds the only
+              private key.
             </p>
             <div className={styles.summaryList}>
               <div>
@@ -669,9 +683,9 @@ export function RibbotControlClient() {
               <>
                 <p className={styles.fundingPrompt}>Next: fund your wallet</p>
                 <p>
-                  Send SOL to the Spot & NFT Wallet for swaps and frogs. Send at
-                  least 50 USDC on Solana to the Imperial Perps Wallet for perps
-                  trading.
+                  Send SOL to the Spot & NFT Wallet for Frog trades. Spot swaps
+                  are coming soon. Send at least 50 USDC on Solana to the
+                  Imperial Perps Wallet for perps trading.
                 </p>
                 <p>Ribbot sent both wallet details to your Telegram DM.</p>
               </>
@@ -741,8 +755,9 @@ export function RibbotControlClient() {
             </span>
             <h2 id="ribbot-success-title">Ribbot is ready</h2>
             <p>
-              Your Frog Trading Exchange account is ready for Spot & NFT trading
-              and Imperial perps. Privy holds the only private key.
+              Your Frog Trading Exchange account is ready for NFT trading and
+              Imperial perps. Spot Trading is coming soon. Privy holds the only
+              private key.
             </p>
             <div className={styles.summaryList}>
               <div>
@@ -760,9 +775,9 @@ export function RibbotControlClient() {
               <>
                 <p className={styles.fundingPrompt}>Next: fund your wallet</p>
                 <p>
-                  Send SOL to the Spot & NFT Wallet for swaps and frogs. Send at
-                  least 50 USDC on Solana to the Imperial Perps Wallet for perps
-                  trading.
+                  Send SOL to the Spot & NFT Wallet for Frog trades. Spot swaps
+                  are coming soon. Send at least 50 USDC on Solana to the
+                  Imperial Perps Wallet for perps trading.
                 </p>
               </>
             ) : (

@@ -72,6 +72,34 @@
   box-shadow: 0 0 10px rgba(20, 241, 149, 0.55);
 }
 
+.comingSoon {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 22px;
+  border: 1px solid rgba(234, 253, 244, 0.2);
+  border-radius: 6px;
+  padding: 0 14px;
+  color: rgba(234, 253, 244, 0.52);
+  background: rgba(112, 112, 128, 0.14);
+  cursor: not-allowed;
+}
+
+.comingSoon span,
+.comingSoon strong {
+  font: inherit;
+}
+
+.comingSoon strong {
+  color: rgba(234, 253, 244, 0.42);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
 .step {
   display: grid;
   gap: 16px;
