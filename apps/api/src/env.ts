@@ -58,6 +58,7 @@ export type Env = {
   PRIVY_WALLET_POLICY_IDS?: string;
   RIBBOT_TRADING_BOT_TOKEN?: string;
   FROGX_BOT_API_TOKEN?: string;
+  RIBBOT_CLOUDFLARE_TOKEN?: string;
   TRADING_BOT_OPERATOR_TOKEN?: string;
   RIBBOT_CONTROL_URL?: string;
   RIBBOT_WALLET_CLAIM_URL?: string;

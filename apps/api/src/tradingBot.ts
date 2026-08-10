@@ -14,6 +14,12 @@ import {
   writeRobinhoodAlphaStoreRequest,
 } from "./robinhoodAlpha";
 import { postQuotes, postSwap } from "./routes";
+import {
+  authorizeTradingBotRequest,
+  resolveTradingBotToken,
+} from "./tradingBotAuth";
+
+export { authorizeTradingBotRequest } from "./tradingBotAuth";
 
 const DEFAULT_PRIVY_API_BASE_URL = "https://api.privy.io/v1";
 const DEFAULT_IMPERIAL_API_BASE_URL = "https://api.imperial.space";
@@ -21085,14 +21091,6 @@ function resolvePrivyConfig(env: Env): PrivyConfig | null {
   };
 }
 
-function resolveTradingBotToken(env: Env): string | undefined {
-  return (
-    env.RIBBOT_TRADING_BOT_TOKEN?.trim() ||
-    env.FROGX_BOT_API_TOKEN?.trim() ||
-    undefined
-  );
-}
-
 async function rpcRequest<T>(
   rpcUrl: string,
   method: string,
@@ -21124,17 +21122,6 @@ function resolveRpcUrl(env: Env): string {
   return (
     env.SOLANA_RPC_URL?.trim() || env.NEXT_PUBLIC_SOLANA_RPC_URL?.trim() || ""
   );
-}
-
-export function authorizeTradingBotRequest(
-  request: Request,
-  env: Env,
-): "allowed" | "denied" | "missing" {
-  const token = resolveTradingBotToken(env);
-  if (!token) return "missing";
-
-  const authorization = request.headers.get("Authorization") ?? "";
-  return authorization === `Bearer ${token}` ? "allowed" : "denied";
 }
 
 function authorizeTradingBotOperatorRequest(

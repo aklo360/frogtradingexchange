@@ -387,6 +387,24 @@ describe("Robinhood Chain alpha API and scheduling", () => {
     expect(response.status).toBe(401);
   });
 
+  it("accepts the additive Cloudflare Ribbot credential", async () => {
+    const response = await getRobinhoodAlphaSignals(
+      new Request(
+        "https://frogx.example/api/frogx/trading-bot/robinhood-alpha",
+        { headers: { Authorization: "Bearer cloudflare-secret" } },
+      ),
+      {
+        RIBBOT_TRADING_BOT_TOKEN: "legacy-secret",
+        RIBBOT_CLOUDFLARE_TOKEN: "cloudflare-secret",
+        TRADING_BOT_ACCOUNTS: namespace(() =>
+          Response.json({ status: "ready", state: null }),
+        ),
+      },
+    );
+
+    expect(response.status).toBe(200);
+  });
+
   it("returns only the public snapshot from stored state", async () => {
     const fixture = convergenceFixture(4);
     const stored = buildRobinhoodAlphaSnapshot({

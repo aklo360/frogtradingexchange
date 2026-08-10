@@ -1,4 +1,5 @@
 import type { Env } from "./env";
+import { authorizeTradingBotRequest } from "./tradingBotAuth";
 
 const CHAIN = "robinhood";
 const CHAIN_ID = 4663;
@@ -575,15 +576,14 @@ export async function getRobinhoodAlphaSignals(
   request: Request,
   env: Env,
 ): Promise<Response> {
-  const token =
-    env.RIBBOT_TRADING_BOT_TOKEN?.trim() || env.FROGX_BOT_API_TOKEN?.trim();
-  if (!token) {
+  const auth = authorizeTradingBotRequest(request, env);
+  if (auth === "missing") {
     return Response.json(
       { status: "not_configured", required: ["RIBBOT_TRADING_BOT_TOKEN"] },
       { status: 503 },
     );
   }
-  if (request.headers.get("Authorization") !== `Bearer ${token}`) {
+  if (auth === "denied") {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
   const store = alphaStore(env);
